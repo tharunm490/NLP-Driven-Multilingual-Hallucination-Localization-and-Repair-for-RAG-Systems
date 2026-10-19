@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
+frontend/.env.local
+
+# Runtime data
+backend/data/chroma/
+backend/data/*.sqlite3
+backend/data/*.sqlite3-*
+backend/data/tmp/
+
+# Local logs
+*.log
+backend/*.log
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+frontend/next-env.d.ts
+frontend/*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,42 @@
+Multilingual Retrieval Sample Document
+======================================
+
+This document is original text created for testing the ingestion and retrieval
+pipeline. It contains facts in English, Hindi, and Tamil so that multilingual
+retrieval can be exercised.
+
+English section
+---------------
+The Eiffel Tower is located in Paris, France. It was completed in 1889 and is
+330 metres tall. The tower was designed by the engineering company of Gustave
+Eiffel. Visitors can climb the tower or take a lift to the observation decks.
+
+The city of Kyoto was the capital of Japan for more than one thousand years.
+Today it is famous for its temples, traditional gardens, and the Gion district.
+
+Water boils at 100 degrees Celsius at standard atmospheric pressure, which is
+defined as 101.325 kilopascals at sea level.
+
+Hindi section
+-------------
+नई दिल्ली भारत की राजधानी है। यह शहर यमुना नदी के किनारे बसा है।
+भारत का राष्ट्रीय ध्वज तिरंगा है, जिसमें केसरिया, सफ़ेद और हरा रंग है।
+मुंबई भारत का एक प्रमुख बंदरगाह शहर है और महाराष्ट्र राज्य की राजधानी है।
+
+Tamil section
+-------------
+சென்னை தமிழ்நாட்டின் தலைநகரம் ஆகும். இது வங்காள விரிகுடாவின் கரையில் அமைந்துள்ளது.
+தமிழ் மொழி உலகின் மிகப் பழமையான மொழிகளில் ஒன்றாகக் கருதப்படுகிறது.
+மதுரை மீனாட்சி அம்மன் கோயிலுக்குப் பிரபலமானது.
+
+Numbers and dates
+-----------------
+The Great Wall of China is more than 21,000 kilometres long.
+The Indian Constitution came into effect on 26 January 1950.
+The value of pi is approximately 3.14159.
+
+Example search queries to try in the UI:
+- "Where is the Eiffel Tower?"
+- "भारत की राजधानी कौन सी है?"
+- "தமிழ்நாட்டின் தலைநகரம் என்ன?"
+- "When did the Indian Constitution come into effect?"

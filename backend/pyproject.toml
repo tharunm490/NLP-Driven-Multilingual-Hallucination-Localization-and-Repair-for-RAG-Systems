@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "integration: tests that download/load a real embedding model (opt-in)",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning:chromadb.*",
+]
