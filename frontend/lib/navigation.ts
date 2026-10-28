@@ -45,9 +45,9 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/verification",
     label: "Hallucination Checks",
-    description: "Claim verification and hallucination localization.",
+    description:
+      "Run a dedicated groundedness check on the latest Ask Documents answer.",
     icon: ShieldCheck,
-    soon: true,
   },
 ];
 

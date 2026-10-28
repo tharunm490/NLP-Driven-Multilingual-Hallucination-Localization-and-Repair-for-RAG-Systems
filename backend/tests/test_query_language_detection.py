@@ -42,6 +42,14 @@ def make_detector(scores, **kwargs) -> QueryLanguageDetector:
     )
 
 
+def make_detector_with_fallback(primary, fallback) -> QueryLanguageDetector:
+    return QueryLanguageDetector(
+        enabled=True,
+        backend=StaticBackend(primary),
+        fallback_backend=StaticBackend(fallback),
+    )
+
+
 def test_detects_english():
     detector = make_detector([LanguageScore("en", 0.97)])
     result = detector.detect("When was the company founded?")
@@ -135,3 +143,43 @@ def test_real_backend_detects_english_and_hindi():
     hindi = detector.detect("कंपनी की स्थापना कब हुई?")
     assert hindi.code == "hi"
     assert hindi.reliable is True
+    short_english = detector.detect("What is ISO?")
+    assert short_english.code == "en"
+    assert short_english.reliable is True
+
+
+def test_confident_fallback_confirms_low_confidence_primary():
+    detector = make_detector_with_fallback(
+        [LanguageScore("en", 0.34)],
+        [LanguageScore("en", 0.99)],
+    )
+    result = detector.detect("What is ISO?")
+
+    assert result.code == "en"
+    assert result.reliable is True
+    assert result.confidence == pytest.approx(0.99)
+    assert result.method == "static+static"
+
+
+def test_fallback_disagreement_keeps_primary_unreliable():
+    detector = make_detector_with_fallback(
+        [LanguageScore("en", 0.34)],
+        [LanguageScore("fr", 0.99)],
+    )
+    result = detector.detect("What is ISO?")
+
+    assert result.code == "en"
+    assert result.reliable is False
+    assert result.reason == "low_confidence"
+
+
+def test_mixed_script_is_not_overridden_by_fallback():
+    detector = make_detector_with_fallback(
+        [LanguageScore("en", 0.34)],
+        [LanguageScore("en", 0.99)],
+    )
+    result = detector.detect("What is ISO \u0939\u093f\u0928\u094d\u0926\u0940?")
+
+    assert result.mixed is True
+    assert result.reliable is False
+    assert result.reason == "mixed_language"

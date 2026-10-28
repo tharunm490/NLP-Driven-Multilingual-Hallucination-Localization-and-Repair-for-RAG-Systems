@@ -21,7 +21,9 @@ from app.api.deps import (
     get_document_registry_status,
     get_embedding_status,
     get_ingestion_service,
+    get_rag_result_store,
     get_rag_service,
+    get_rag_verification_service,
     get_retrieval_service,
     get_vector_store_status,
 )
@@ -31,6 +33,7 @@ from app.schemas.health import ComponentStatus
 from app.services.document_processor import DocumentProcessor
 from app.services.document_registry import DocumentRegistry
 from app.services.embedding_service import EmbeddingService
+from app.services.evidence_assessor import EvidenceAssessor
 from app.services.generator import MockGenerator
 from app.services.ingestion_service import IngestionService
 from app.services.language_detection import LanguageDetector
@@ -39,10 +42,14 @@ from app.services.query_language_detection import (
     LanguageScore,
     QueryLanguageDetector,
 )
+from app.services.rag_result_store import RagResultStore
 from app.services.rag_service import RagService
+from app.services.rag_verification_service import RagVerificationService
 from app.services.retrieval_service import RetrievalService
 from app.services.text_chunker import TextChunker
 from app.vectorstore.chroma_store import ChromaStore
+from tests.rag_support import FixedEvidenceAssessor
+from tests.verification_support import StubVerificationEngine
 
 EMBEDDING_DIMENSION = 16
 
@@ -150,9 +157,11 @@ def settings(tmp_path: Path) -> Settings:
         query_language_fallback="",
         rag_max_question_length=200,
         rag_min_evidence_chunks=1,
-        rag_distance_filter_enabled=False,
-        rag_max_distance=0.75,
+        rag_distance_filter_enabled=True,
+        rag_max_distance=2.0,
         rag_generation_without_evidence=False,
+        rag_evidence_assessment_mode="heuristic",
+        rag_evidence_assessment_fallback_enabled=True,
         llm_provider="mock",
         llm_model="test-mock-model",
         llm_api_key="",
@@ -265,12 +274,18 @@ def mock_generator() -> MockGenerator:
 
 
 @pytest.fixture
+def evidence_assessor() -> EvidenceAssessor:
+    return FixedEvidenceAssessor()
+
+
+@pytest.fixture
 def rag_service(
     settings: Settings,
     retrieval_service: RetrievalService,
     mock_generator: MockGenerator,
     query_language_detector: QueryLanguageDetector,
     prompt_builder: PromptBuilder,
+    evidence_assessor: EvidenceAssessor,
 ) -> RagService:
     return RagService(
         settings=settings,
@@ -278,6 +293,23 @@ def rag_service(
         generator=mock_generator,
         language_detector=query_language_detector,
         prompt_builder=prompt_builder,
+        evidence_assessor=evidence_assessor,
+    )
+
+
+@pytest.fixture
+def rag_result_store(settings: Settings) -> RagResultStore:
+    return RagResultStore(
+        max_entries=settings.rag_result_cache_size,
+        ttl_seconds=settings.rag_result_ttl_seconds,
+    )
+
+
+@pytest.fixture
+def rag_verification_service(settings: Settings) -> RagVerificationService:
+    return RagVerificationService(
+        settings=settings,
+        verification_engine=StubVerificationEngine(),
     )
 
 
@@ -288,6 +320,8 @@ def api_client(
     ingestion_service: IngestionService,
     retrieval_service: RetrievalService,
     rag_service: RagService,
+    rag_verification_service: RagVerificationService,
+    rag_result_store: RagResultStore,
     registry: DocumentRegistry,
 ) -> TestClient:
     app = create_app()
@@ -297,6 +331,10 @@ def api_client(
     app.dependency_overrides[get_ingestion_service] = lambda: ingestion_service
     app.dependency_overrides[get_retrieval_service] = lambda: retrieval_service
     app.dependency_overrides[get_rag_service] = lambda: rag_service
+    app.dependency_overrides[get_rag_verification_service] = (
+        lambda: rag_verification_service
+    )
+    app.dependency_overrides[get_rag_result_store] = lambda: rag_result_store
     app.dependency_overrides[get_vector_store_status] = lambda: ComponentStatus(
         status="ok", detail="fake vector store"
     )

@@ -1,13 +1,14 @@
-# Phase Documentation — Phases 1, 2 and 3
+# Phase Documentation — Phases 1, 2, 3 and 4A
 
 **Project:** NLP-Driven Multilingual Hallucination Localization and Repair for RAG Systems
 **Application version:** `0.1.0`
-**Scope of this document:** the backend and the data/NLP pipeline implemented in **Phase 1, Phase 2 and Phase 3**.
+**Scope of this document:** the backend and the data/NLP pipeline implemented in **Phase 1, Phase 2, Phase 3 and Phase 4A**.
 This document deliberately does **not** describe the user interface, screens, components, styling or theming.
 
-> Phase 4+ (claim extraction, NLI verification, hallucination classification, span localization,
-> LLM repair, re-verification) is **not** implemented. The code is structured so those services can be
-> added without rewriting the existing pipeline.
+> Phase 4A implements the pretrained verification engine: language detection, text preparation,
+> factual claim extraction, multilingual NER, claim/evidence matching, and multilingual NLI.
+> Phase 4B+ (baseline training, fine-tuning, span localization, repair, re-verification) is **not**
+> implemented. The code is structured so those services can be added without rewriting the pipeline.
 
 ---
 
@@ -18,6 +19,7 @@ This document deliberately does **not** describe the user interface, screens, co
 | **Phase 1** | Foundation / project setup | FastAPI application skeleton, typed settings, structured logging + request logging, centralised error types and HTTP exception mapping, CORS, health endpoint, SQLite registry bootstrap, deterministic test harness. |
 | **Phase 2** | Document ingestion + vector storage | PDF/TXT validation, text extraction, conservative cleaning, sentence-aware overlapping chunking, multilingual embeddings, persistent ChromaDB storage with metadata, document registry, retrieval-only search endpoint, delete flow, and full test coverage. |
 | **Phase 3** | Retrieval-augmented question answering | Query language detection, conservative query preprocessing, query embedding with the ingestion model, ChromaDB top-K retrieval, an evidence policy, a versioned evidence-grounded system prompt, an OpenAI-compatible generative LLM client, and the `/api/rag/query` endpoint returning an answer plus real source metadata and timings. |
+| **Phase 4A** | Pretrained claim-level verification | Answer language detection, Unicode-safe text preparation and sentence segmentation, deterministic factual claim extraction, multilingual NER, semantic claim/evidence matching, multilingual NLI with actual label mapping, per-claim/answer verification statuses, `/api/verification/check`, and isolated integration with the RAG response. |
 
 ---
 
@@ -38,7 +40,7 @@ versions at the time of writing are listed for reproducibility.
 | chromadb | `>=0.5.5,<2.0` | 1.5.9 | Persistent vector store |
 | sentence-transformers | `>=3.0,<6.0` | 5.7.0 | Embedding model runtime |
 | transformers | `>=4.44,<6.0` | 5.20.1 | Tokenizers |
-| torch | (transitive) | 2.14.1 | Model execution (CUDA/MPS/CPU) |
+| torch | `>=2.2,<3.0` | 2.14.1 | Model execution (CUDA/MPS/CPU) |
 | charset-normalizer | `>=3.3,<4.0` | 3.5.2 | Legacy TXT encoding detection |
 | langdetect | `>=1.0.9,<2.0` | 1.0.9 | Document language + query fallback |
 | httpx | `>=0.27,<1.0` | 0.28.1 | LLM HTTP client |
@@ -188,6 +190,11 @@ Auxiliary generators:
 | 6 | Vector search | ChromaDB (cosine HNSW) | 1.5.9 | Top-K chunks + distances |
 | 7 | Query language | Lingua (31 languages) → langdetect fallback | 2.2.0 / 1.0.9 | ISO code + confidence + reliability |
 | 8 | Answer generation | OpenAI-compatible LLM, default Groq `openai/gpt-oss-120b` | httpx 0.28.1 | Grounded answer text |
+| 9 | Answer language | Lingua → langdetect fallback | 2.2.0 / 1.0.9 | ISO code + confidence |
+| 10 | Claim extraction | Deterministic local heuristics | Python | Verbatim claims + offsets |
+| 11 | Named entities | `Davlan/xlm-roberta-base-wikiann-ner` | transformers 5.20.1 | Entity text/label/offset |
+| 12 | Claim/evidence matching | `BAAI/bge-m3` cosine + lexical fallback | sentence-transformers 5.7.0 | Ranked evidence |
+| 13 | Claim/evidence NLI | `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` | transformers 5.20.1 | Label + class probabilities |
 
 ---
 
@@ -405,6 +412,117 @@ System-authored, language-aware (no claims about the documents):
 - Unknown/unsupported language codes fall back to the English message; non-English messages append a note that
   no retrieved chunk passed the configured retrieval policy.
 
+### 6.7 Phase 4A — Pretrained claim-level verification
+
+Implemented in `backend/app/services/verification/` and exposed through
+`POST /api/verification/check` plus the optional `verification` block in
+`POST /api/rag/query`.
+
+**Pipeline**
+
+1. **Answer language detection** — the Phase 3 detector. Detection is metadata;
+   verification does not translate or reject non-English text.
+2. **Text preparation** — NFKC canonicalization with source offset maps,
+   multilingual sentence splitting (including Devanagari danda), and
+   Unicode-safe word spans.
+3. **Claim extraction** — deterministic local heuristics select factual
+   sentences, exclude headings, metadata, questions, and introductory text, and
+   split clearly independent clauses. Markdown prefixes and trailing
+   `[Source N]` citations are removed while source offsets are preserved.
+   Numbered/bullet/nested items are reconstructed from headings, lead-ins, and
+   parent items; short list labels are separated from complete proposition bodies
+   (for example `Risk treatment – The organization...`). Original claim text,
+   reconstructed hypothesis, and context are retained. Extraction never calls the
+   answer-generation LLM.
+4. **NER** — `Davlan/xlm-roberta-base-wikiann-ner` produces entity text, label,
+   score, and offsets. NER failure is non-fatal.
+5. **Evidence matching** — claim/evidence candidates are ranked with the
+   configured multilingual embedding model; a deterministic lexical matcher is
+   used if semantic matching fails. Ranking guides relevance and premise
+   selection only: every checked claim is still compared with every retrieved
+   evidence chunk, subject to the configured budget.
+6. **NLI** — evidence is the premise, claim is the hypothesis. The default model
+   is `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`; label indices are read from
+   `config.id2label`. The default backend runs the model locally; an optional
+   dedicated Hugging Face Inference Endpoint (Text Classification task) preserves
+   the same text-pair contract without loading the NLI model locally. Long
+   evidence is reduced to a token-bounded context window around the best
+   matching passage. Every claim/chunk pair is evaluated; pairs beyond the
+   budget are reported as missing, not silently dropped.
+7. **Result assembly** — per-claim label, confidence, probabilities, support and
+   contradiction scores, conflict flag, explanation, matched evidence, windows,
+   entities, warnings, and answer-level summary. Each evidence row preserves the
+   original retrieval score/similarity separately from the verification
+   matcher's similarity. Counts partition the extracted claims into `supported`,
+   `contradicted`, `neutral`, `unevaluable`, and `verification_error`; the sum
+   equals `claims_total`. Summary counts also expose expected/evaluated/missing
+   pairs and claims with complete evidence coverage.
+
+**Labels and statuses**
+
+- NLI label → claim status: any counted relevant contradiction → `contradicted`
+  (with `conflict=true` when support is also present); otherwise any counted
+  relevant entailment → `supported`; otherwise, when evaluated pairs exist,
+  `neutral`. Claims excluded as non-propositions are `unevaluable`; claims with
+  no usable pair result are `verification_error`.
+- `neutral` means the evaluated evidence did not meet either threshold. It is not
+  a factual refutation and does not mean retrieval returned nothing.
+- Answer status in RAG: any contradicted claim → `contradicted`; all claims
+  supported → `grounded`; some supported → `partially_grounded`; no supported
+  claims → `insufficient_evidence`; zero extracted claims never become
+  `grounded`.
+- Verification exceptions preserve the generated answer and set
+  `verification.status="error"` with a sanitized error message.
+
+**Performance and model selection**
+
+- Every claim/chunk pair runs in configurable batches through one loaded model
+  instance. Identical pairs are deduplicated, recent predictions are reused via
+  a bounded LRU cache, and pairs are ordered by token length within batch/token
+  caps. Pairs beyond the budget remain visible as missing.
+- Defaults verify up to 20 claims against up to 50 distinct evidence chunks each,
+  with a hard cap of 250 NLI pairs and a 120 s deadline. Up to 64 claims are
+  retained for extraction so claims beyond the verified cap remain visible with
+  `verification_error` and a `not_checked` reason. The primary NLI window is 256
+  tokens, matching the model pair-token
+  limit. The contradiction threshold is 0.6 because an unrelated passage scored
+  0.5025 on the 0.5 default.
+- Local inference uses a batch size of 8 and an 8192 padded-token cap. A bounded
+  request limiter allows one active job, waits up to 5 s, and admits at most two
+  waiters before returning HTTP 503. Cancellation is checked at safe boundaries.
+- mDeBERTa was selected for correctness. A compact
+  `MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli` was faster but failed the
+  real integration check by labelling "annual reviews" vs "daily reviews" as
+  entailment, so it is not the default.
+- First local verification includes lazy model-load latency; subsequent requests
+  reuse the loaded model within the process.
+- Exhaustive benchmark on 6 physical CPU cores (13 claims, 6 evidence chunks,
+  78 pairs): the batched configuration took **16.9 s cold** and **1.0 s warm**,
+  with 13/13 claims complete, 78/78 pairs evaluated, 92.3% accuracy on the small
+  labelled fixture, and 0 false-support outcomes. The unbatched configuration
+  took 21.9 s cold. The old 8-claim/2-chunk/12-pair cap evaluated only 12/78
+  pairs and left every claim incomplete. These are single-machine, single-run
+  measurements, not calibrated guarantees.
+- ONNX Runtime is an optional local backend selected with
+  `VERIFICATION_NLI_BACKEND=onnx`. Export with
+  `python scripts/export_nli_onnx.py`; the FP32 export previously matched
+  PyTorch labels. Dynamic INT8 measured 86.7 ms/pair but only 72.2% accuracy, so
+  it is rejected.
+- Successful verification results expose stage timings in
+  `verification.details.timings`: claim extraction, evidence selection, NLI, and
+  aggregation. The reproducible harness and checked-in report live under
+  `backend/evaluation/`; the report is a controlled fixture, not a public NLI
+  benchmark.
+- Hosted mode is optional and disabled by default; the verifier, tests, and
+  benchmark use local inference only. When explicitly configured, hosted mode
+  uses the endpoint's tokenizer locally only for window sizing, sends only
+  claims/evidence windows, validates the three canonical labels and normalised
+  scores, and surfaces failures without automatic local fallback.
+  A Hugging Face Inference Endpoint is billed for uptime by hardware/plan; its
+  quotas, rate limits, logging, and retention are account/provider concerns.
+  Serverless zero-shot NLI is not suitable because it cannot accept a
+  premise/hypothesis pair.
+
 ---
 
 ## 7. Configuration reference
@@ -453,6 +571,40 @@ Relative paths resolve from `backend/`.
 | `LLM_TEMPERATURE` | `0` | Low temperature for factual answering |
 | `LLM_TIMEOUT_SECONDS` | `60` | Per-request provider timeout |
 | `LLM_MAX_OUTPUT_TOKENS` | `800` | Answer length cap |
+| `VERIFICATION_ENABLED` | `true` | Run claim-level verification after RAG generation |
+| `VERIFICATION_MAX_EXTRACTED_CLAIMS` | `64` | Extracted claims retained; must be ≥ verified cap |
+| `VERIFICATION_MAX_CLAIMS` | `20` | Claims verified per answer; extras reported as `verification_error` with a `not_checked` reason |
+| `VERIFICATION_MAX_EVIDENCE_PER_CLAIM` | `50` | Distinct evidence chunks considered per claim; matches the largest retrievable `top_k` |
+| `VERIFICATION_MAX_NLI_PAIRS` | `250` | Hard cap on exhaustive claim/evidence NLI pairs; extra pairs reported missing |
+| `VERIFICATION_MIN_EVIDENCE_RELEVANCE` | `0.5` | Minimum relevance before an NLI verdict counts |
+| `VERIFICATION_PRIMARY_WINDOW_TOKENS` | `256` | Primary focused window; ambiguous claims may expand |
+| `VERIFICATION_DEADLINE_SECONDS` | `120` | Stop starting NLI work; unstarted claims retain `verification_error` with the deadline reason |
+| `VERIFICATION_MAX_CONCURRENT_REQUESTS` | `1` | Concurrent local verification jobs |
+| `VERIFICATION_QUEUE_WAIT_SECONDS` | `5` | Maximum wait for a verification slot |
+| `VERIFICATION_MAX_QUEUED_REQUESTS` | `2` | Waiters admitted before HTTP 503 |
+| `VERIFICATION_NLI_MODEL_NAME` | `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` | Multilingual NLI model |
+| `VERIFICATION_NLI_BACKEND` | `local` | `local`, `onnx`, or `hf_endpoint` |
+| `VERIFICATION_NLI_DEVICE` | `auto` | `auto` \| `cpu` \| `cuda` \| `mps` (PyTorch only) |
+| `VERIFICATION_NLI_BATCH_SIZE` | `8` | Local in-process inference batch |
+| `VERIFICATION_NLI_MAX_BATCH_TOKENS` | `8192` | Padded token cap per local batch |
+| `VERIFICATION_NLI_CACHE_SIZE` | `256` | Prediction cache entries; `0` disables it |
+| `VERIFICATION_NLI_ONNX_MODEL_PATH` | empty | Required for `onnx` |
+| `VERIFICATION_NLI_ONNX_PROVIDER` | `CPUExecutionProvider` | ONNX Runtime execution provider |
+| `VERIFICATION_NLI_ONNX_INTRA_THREADS` / `INTER_THREADS` | `0` / `1` | ONNX Runtime thread caps |
+| `VERIFICATION_NLI_HOSTED_BATCH_SIZE` | `1` | Pairs per hosted request |
+| `VERIFICATION_NLI_MAX_CONCURRENCY` | `2` | Maximum concurrent hosted requests |
+| `VERIFICATION_NLI_MAX_TOKENS` | `256` | Maximum tokens per premise/hypothesis pair |
+| `VERIFICATION_NLI_ENDPOINT_URL` | empty | Required for `hf_endpoint` |
+| `VERIFICATION_NLI_API_KEY` | empty | Required for `hf_endpoint`; keep secret |
+| `VERIFICATION_NLI_TIMEOUT_SECONDS` | `30` | Hosted request timeout |
+| `VERIFICATION_NLI_MAX_RETRIES` | `2` | Retries for transient hosted failures |
+| `VERIFICATION_NLI_RETRY_BACKOFF_SECONDS` | `0.5` | Base backoff; honours `Retry-After` |
+| `VERIFICATION_NLI_ENTAILMENT_THRESHOLD` | `0.5` | Minimum score for `supported` |
+| `VERIFICATION_NLI_CONTRADICTION_THRESHOLD` | `0.6` | Minimum score for `contradicted` |
+| `VERIFICATION_NER_ENABLED` | `true` | Extract named entities; failures are non-fatal |
+| `VERIFICATION_NER_MODEL_NAME` | `Davlan/xlm-roberta-base-wikiann-ner` | Multilingual NER model |
+| `VERIFICATION_NER_DEVICE` | `auto` | `auto` \| `cpu` \| `cuda` \| `mps` |
+| `VERIFICATION_NER_MAX_TOKENS` | `512` | NER chunk token limit |
 
 ---
 
@@ -485,11 +637,14 @@ interactive OpenAPI UI.
 | `GET` | `/api/documents/{document_id}` | Document detail |
 | `DELETE` | `/api/documents/{document_id}` | Delete chunks + registry row |
 | `POST` | `/api/retrieval/search` | `{ query, top_k?, document_ids? }` → ranked chunks (no answer generation) |
-| `POST` | `/api/rag/query` | `{ question, top_k?, document_ids? }` → grounded answer + sources + timings |
+| `POST` | `/api/rag/query` | `{ question, top_k?, document_ids? }` → grounded answer + sources + timings + verification |
+| `POST` | `/api/verification/check` | `{ answer, evidence[] }` → standalone claim-level verification |
 
 Uploads always return HTTP 200 with a per-file result status of `completed`, `failed`, or `rejected`, so a
 batch survives individual failures. `POST /api/rag/query` returns: 400 invalid/overlong question, 422 schema
 validation error, 503 LLM not configured / vector store unavailable, 502 LLM provider error.
+`POST /api/verification/check` returns 422 for empty/invalid input and 500 only for unexpected failures; model
+or verification failures are normally represented as `status="error"` inside a successful response.
 
 ---
 
@@ -504,14 +659,15 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Latest result: **138 passed, 3 skipped** (~16 s). The 3 skips are the opt-in real-embedding integration tests.
+Latest result: **251 passed, 9 skipped** (~21 s). The 9 skips are the opt-in real-embedding,
+real-verification, and hosted-endpoint integration tests.
 
 Test design: the unit/API suite **never downloads a model**. `tests/conftest.py` injects a deterministic fake
 encoder (16-dimensional) through `EmbeddingService`'s model factory, runs ChromaDB and SQLite against
 per-test temporary directories, and provides a `TestClient` with dependency overrides. It also provides
 fake/unavailable query-language backends for deterministic detection tests.
 
-Coverage by area (15 unit/API modules in `tests/`, plus the 2 opt-in integration modules in §10.2):
+Coverage by area (unit/API modules in `tests/`, plus the opt-in integration modules in §10.2):
 
 | Area | Module(s) |
 | --- | --- |
@@ -531,8 +687,31 @@ Coverage by area (15 unit/API modules in `tests/`, plus the 2 opt-in integration
 | Prompt construction | `test_prompt_builder.py` |
 | Generator error mapping (mocked HTTP) | `test_generator.py` |
 | RAG evidence policy + full flow (mocked LLM) | `test_rag_service.py` |
+| Verification text preparation | `test_verification_text.py` |
+| Local claim extraction, headings, and compound splitting | `test_verification_claims.py` |
+| NLI windowing, labels, batching | `test_verification_nli.py` |
+| ONNX NLI label mapping, inputs, settings | `test_verification_nli_onnx.py` |
+| Bounded verification request queue | `test_request_limiter.py` |
+| Hosted NLI payload, retries, validation, config | `test_verification_nli_hosted.py` |
+| Verification orchestration and statuses | `test_verification_engine.py` |
+| RAG/API verification integration | `test_rag_verification.py`, `test_api_verification.py` |
 
-### 10.2 Real-model integration tests (opt-in)
+### 10.2 Verification performance benchmark
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m evaluation.verification_benchmark --engine-only
+```
+
+The harness runs isolated subprocess jobs over a labelled ISO/IEC 27001 fixture,
+samples time and peak RSS, and writes `evaluation/results/verification_performance.json`
+and `.md`. Pass `--include-int8` only when the quantized export exists. Current
+engine results: batched exhaustive 13-claim/6-chunk request (78 pairs) 16.9 s
+cold / 1.0 s warm, 13/13 claims complete, 78/78 pairs evaluated, 92.3% fixture
+accuracy, 0 false support; unbatched exhaustive 21.9 s cold. The legacy
+8-claim/12-pair cap evaluated only 12/78 pairs and left every claim incomplete.
+
+### 10.3 Real-model integration tests (opt-in)
 
 ```powershell
 cd backend
@@ -545,9 +724,16 @@ $env:EMBEDDING_MODEL_NAME="BAAI/bge-m3"            # or intfloat/multilingual-e5
   (verified: `BAAI/bge-m3` → dim **1024**; `intfloat/multilingual-e5-base` → dim **768**).
 - `test_rag_real_embeddings.py` — the full RAG pipeline with the real embedding model and the deterministic
   **mock** generator (no API credits spent).
-- Verified: **2 tests passed** per model.
+- `test_verification_real_models.py` — real mDeBERTa NLI + XLM-R NER, covering Hindi/English entailment,
+  an obvious contradiction, and end-to-end engine verification:
+  `$env:RUN_VERIFICATION_INTEGRATION="1"`.
+- `test_verification_hosted_endpoint.py` — real dedicated Text Classification endpoint smoke test:
+  `$env:RUN_HOSTED_NLI_INTEGRATION="1"`; requires hosted config and makes paid API calls.
+- Verified earlier with mDeBERTa: cross-lingual entailment and an obvious contradiction were classified
+  correctly. The current file contains **4 opt-in verification tests**; they are excluded from the latest
+  deterministic full-suite run.
 
-### 10.3 End-to-end smoke test
+### 10.4 End-to-end smoke test
 
 ```powershell
 cd backend
@@ -563,7 +749,7 @@ A real Groq run (default model `openai/gpt-oss-120b`) produced a grounded answer
 ("The Eiffel Tower is located in Paris, France [Source 1]") and correctly refused to fabricate an answer for
 an unrelated question. Example output: `SMOKE_TEST_OK`.
 
-### 10.4 Phase acceptance
+### 10.5 Phase acceptance
 
 - **Phase 1:** app starts; `GET /api/health` returns ok; CORS allows the configured frontend origin; no secrets
   exposed.
@@ -575,6 +761,12 @@ an unrelated question. Example output: `SMOKE_TEST_OK`.
   separate system prompt plus delimited untrusted evidence; the response contains the answer and **real**
   source metadata; insufficient evidence is handled explicitly without fabrication; provider errors map to
   clean 503/502 responses; automated tests (including mocked-LLM) pass.
+- **Phase 4A:** generated answers are split into verifiable claims with offsets; each claim is matched to
+  evidence and classified as supported/contradicted/insufficient using a real multilingual NLI model; NER
+  returns entities; answer-level statuses propagate to the RAG response; verification errors are isolated and
+  do not discard the answer; the standalone endpoint and RAG integration work; bounded queue/deadline and
+  cancellation behavior is covered; the frontend can cancel an in-flight question; the benchmark report is
+  checked in; automated and opt-in real-model tests pass.
 
 ---
 
@@ -594,20 +786,35 @@ an unrelated question. Example output: `SMOKE_TEST_OK`.
   question still landed at distance ≈ 0.626 (< 0.75) and was treated as "sufficient"; the LLM was then
   instructed to state the limitation. Tune the threshold (or disable the filter) per model/corpus.
 - **Upload processing is synchronous**; the first request includes embedding-model load time.
-- **Grounding is prompt-based only.** A system prompt reduces but cannot eliminate unsupported answers; a
-  dedicated verification/localization engine is a later phase.
+- **Claim-level verification reduces but does not eliminate hallucination.** NLI scores are model
+  probabilities, not calibrated factual truth; retrieval/matching errors can produce false support or false
+  contradiction.
+- **CPU NLI is relatively slow.** Enabling local verification adds several seconds per answer on CPU, plus lazy
+  model-load time on the first request. The benchmarked exhaustive default took 16.9 s cold / 1.0 s warm on the
+  fixture; caps on claims/evidence/pairs limit worst-case latency but also bound coverage on very long answers,
+  and skipped claims or missing pairs are reported explicitly. A faster MiniLM was tested and rejected because
+  it confused an obvious contradiction with entailment. The optional FP32 ONNX backend was 1.18x faster per
+  pair in the earlier NLI-only run; dynamic INT8 was rejected at 72.2% fixture accuracy.
+- **Hosted NLI trades local CPU for provider dependency and cost.** It requires a dedicated Hugging Face
+  Inference Endpoint (Text Classification task) with a token, is billed by endpoint uptime/hardware, and is
+  subject to provider quotas, rate limits, availability, logging, and retention. There is no automatic local
+  fallback; batch support must be verified against the deployed endpoint; and hosted latency has not yet been
+  measured end-to-end. Failed runs preserve timings only for stages that completed.
+- **Claim extraction is local and deterministic.** It filters obvious headings,
+  metadata, and introductory text, but can still miss or merge claims in long or
+  ambiguous sentences.
+- **Hindi/Devanagari requests must be sent as UTF-8.** PowerShell 5.1 `Invoke-RestMethod` can mangle
+  Devanagari and cause false `no_letters` language detection; use an HTTP client that sends UTF-8 JSON.
 - Only `.pdf` and `.txt` are supported; there is no authentication/authorisation layer.
 
 ---
 
-## 12. Out of scope (Phase 4+)
+## 12. Out of scope (Phase 4B+)
 
-Planned but not implemented: multilingual Transformer NLI
-(`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, `joeddav/xlm-roberta-large-xnli`), multilingual NER, claim
-extraction, claim–evidence matching, hallucination classification, span localization, LLM repair, and
-re-verification. Intended constraints: inference stays isolated from route handlers, thresholds remain
-configurable, and models are evaluated per language (Recall@K, MRR, Precision/Recall/F1/Macro-F1, span F1, IoU)
-before selection.
+Phase 4A is implemented. Planned but not implemented: TF-IDF/Logistic-Regression baselines, labelled-data
+fine-tuning, model comparison, hallucination span localization, targeted LLM repair, and re-verification.
+Intended constraints: inference stays isolated from route handlers, thresholds remain configurable, and models
+are evaluated per language (Recall@K, MRR, Precision/Recall/F1/Macro-F1, span F1, IoU) before selection.
 
 ---
 
@@ -622,13 +829,22 @@ backend/
 │   │   ├── health.py                GET /api/health
 │   │   ├── documents.py             upload / list / detail / delete
 │   │   ├── retrieval.py             POST /api/retrieval/search
-│   │   └── rag.py                   POST /api/rag/query
+│   │   ├── rag.py                   POST /api/rag/query
+│   │   └── verification.py          POST /api/verification/check
 │   ├── core/
 │   │   ├── config.py                Settings (env + .env)
 │   │   ├── errors.py                error types + HTTP handlers
 │   │   └── logging.py               logging configuration
-│   ├── schemas/                     health, document, retrieval, rag
+│   ├── schemas/                     health, document, retrieval, rag, verification
 │   ├── services/
+│   │   ├── verification/            Phase 4A verification pipeline
+│   │   │   ├── text.py              offset-preserving normalization/segmentation
+│   │   │   ├── claims.py            local heuristic claim extraction
+│   │   │   ├── ner.py               multilingual NER
+│   │   │   ├── matching.py          claim/evidence ranking
+│   │   │   ├── nli.py               multilingual NLI + windowing
+│   │   │   ├── engine.py            orchestration/status aggregation
+│   │   │   └── runtime.py           torch device resolution
 │   │   ├── document_processor.py    validation, PDF/TXT extraction, decoding
 │   │   ├── text_cleaner.py          conservative cleaning
 │   │   ├── text_chunker.py          sentence-aware overlapping chunking
@@ -668,6 +884,10 @@ Copy-Item .env.example .env
 # optional: pre-download the embedding model (~2.2 GB for BAAI/bge-m3)
 python scripts\download_embedding_model.py
 
+# verification models download lazily on the first verification request:
+#   MoritzLaurer/mDeBERTa-v3-base-mnli-xnli
+#   Davlan/xlm-roberta-base-wikiann-ner
+
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -680,29 +900,26 @@ tests/demos. Without a key the app still serves health, uploads and retrieval; o
 returns 503.
 
 
-## Phase 4: NLP Verification Engine and Model Training
+## Phase 4B: Verification Model Training and Comparison
 
-**Objective:** Develop an NLP-based verification engine that evaluates individual factual claims against retrieved evidence and learns to distinguish supported claims from contradictions and unsupported claims.
+**Objective:** Improve the Phase 4A pretrained verification pipeline with a trained baseline and an evaluated
+fine-tuned claim–evidence model.
 
-### Implementation tasks
+### Remaining tasks
 
-- Detect the language of generated answers and apply text normalization and sentence segmentation.
-- Tokenize the answer into words or subword units.
-- Implement factual claim extraction as an independent, testable component rather than treating tokenization as claim extraction.
-- Identify named entities using a multilingual Named Entity Recognition (NER) model.
-- Generate semantic representations of claims and retrieved evidence using multilingual Transformer embeddings.
-- Match each claim with its most relevant evidence from the existing RAG retrieval pipeline.
-- Implement a baseline using TF-IDF features and Logistic Regression for claim–evidence classification where suitable.
-- Implement a pretrained multilingual Transformer-based Natural Language Inference (NLI) model.
-- Prepare labelled training examples with entailment, contradiction, and neutral classes, ensuring the labels are supported by the original annotations.
+- Prepare labelled training examples with entailment, contradiction, and neutral classes, ensuring labels are
+  supported by the original annotations.
+- Implement a TF-IDF + Logistic Regression baseline for claim–evidence classification.
 - Fine-tune a suitable multilingual Transformer on compatible labelled data.
-- Compare the fine-tuned model against the traditional ML baseline and pretrained Transformer.
-- Save the trained model, tokenizer, label mapping, and evaluation configuration for integration into the backend.
-- Return a structured verification result for every claim, including its predicted label, confidence, and supporting evidence.
+- Compare the fine-tuned model against the traditional baseline and the Phase 4A pretrained NLI model.
+- Save the trained model, tokenizer, label mapping, and evaluation configuration for backend integration.
+- Add per-language evaluation (EN/HI/TA where data allows) before changing the default model.
 
-**Datasets to investigate:** RAGTruth, PsiloQA, and a suitable Natural Language Inference dataset. Inspect their schemas and annotation compatibility before selecting training data.
+**Datasets to investigate:** RAGTruth, PsiloQA, and a suitable Natural Language Inference dataset. Inspect
+their schemas and annotation compatibility before selecting training data.
 
-**Expected deliverable:** A working NLP verification engine with an evaluated, fine-tuned claim–evidence verification model.
+**Expected deliverable:** An evaluated claim–evidence verification model with a documented comparison against
+the current mDeBERTa baseline.
 
 ## Phase 5: Hallucination Detection and Span Localization
 

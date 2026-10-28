@@ -33,7 +33,10 @@ def test_grounded_answer_uses_evidence(rag_service: RagService, mock_generator, 
     document = ingest(ingestion_service, DOCUMENT_TEXT)
     response = rag_service.answer(QUESTION)
 
-    assert response.answer_mode == "grounded"
+    assert response.answer_mode == "verification_pending"
+    assert response.answer_status == "verification_pending"
+    assert response.evidence_state == "sufficient_evidence"
+    assert response.verification.claim_level_verification is False
     assert response.retrieval.sufficient_evidence is True
     assert response.retrieval.returned_chunks >= 1
     assert response.sources
@@ -75,13 +78,14 @@ def test_answer_preserves_original_question(rag_service: RagService, ingestion_s
 def test_empty_collection_is_insufficient(rag_service: RagService, mock_generator):
     response = rag_service.answer(QUESTION)
     assert response.answer_mode == "insufficient_evidence"
+    assert response.answer_status == "insufficient_evidence"
     assert response.retrieval.sufficient_evidence is False
     assert response.sources == []
     assert response.generation.used_llm is False
     assert mock_generator.calls == []
 
 
-def test_distance_filter_can_force_insufficient(
+def test_distance_filter_rejects_all_candidates(
     settings: Settings,
     retrieval_service: RetrievalService,
     mock_generator: MockGenerator,
@@ -101,7 +105,11 @@ def test_distance_filter_can_force_insufficient(
     )
     response = service.answer(QUESTION)
     assert response.retrieval.sufficient_evidence is False
-    assert response.answer_mode == "insufficient_evidence"
+    assert response.answer_mode == "irrelevant_retrieval"
+    assert response.answer_status == "irrelevant_retrieval"
+    assert response.evidence_state == "irrelevant_evidence"
+    assert response.sources == []
+    assert response.retrieval.rejected_chunks
     assert mock_generator.calls == []
 
 
@@ -122,6 +130,7 @@ def test_generation_without_evidence_policy_calls_llm(
     response = service.answer(QUESTION)
     assert response.retrieval.sufficient_evidence is False
     assert response.answer_mode == "insufficient_evidence"
+    assert response.answer_status == "insufficient_evidence"
     assert response.generation.used_llm is True
     assert len(mock_generator.calls) == 1
     assert "(no evidence retrieved)" in mock_generator.calls[0][1].content

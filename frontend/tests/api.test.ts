@@ -2,10 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ApiError,
+  RequestCancelledError,
   askQuestion,
+  checkHallucinations,
   checkHealth,
   getApiBaseUrl,
+  getRagResult,
   listDocuments,
+  verifyRagResult,
 } from "../lib/api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -158,6 +162,28 @@ describe("askQuestion", () => {
     expect(result.sources[0].filename).toBe("acme.txt");
   });
 
+  it("distinguishes caller cancellation from a timeout", async () => {
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      }),
+    );
+
+    const pending = askQuestion({ question: "long request" }, {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toBeInstanceOf(RequestCancelledError);
+    await expect(pending).rejects.toThrow(/cancelled/);
+  });
+
   it("surfaces a 503 configuration error from the backend", async () => {
     vi.stubGlobal(
       "fetch",
@@ -188,5 +214,54 @@ describe("askQuestion", () => {
     expect(result.answer_mode).toBe("insufficient_evidence");
     expect(result.sources).toEqual([]);
     expect(result.retrieval.sufficient_evidence).toBe(false);
+  });
+});
+
+
+describe("shared result and hallucination endpoints", () => {
+  it("retrieves a shared Ask result by identifier", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ result_id: "abc", answer: "shared answer" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await getRagResult("abc");
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/api/rag/results/abc",
+    );
+    expect(result.answer).toBe("shared answer");
+  });
+
+  it("verifies a stored Ask result by identifier", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ result_id: "abc", verification: { status: "verified" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await verifyRagResult("abc");
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/api/verification/results/abc",
+    );
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(result.verification?.status).toBe("verified");
+  });
+
+  it("posts the selected result id to the hallucination endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ check_id: "check-1", result_id: "abc" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await checkHallucinations({ result_id: "abc" });
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/api/hallucination/check",
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      result_id: "abc",
+    });
+    expect(result.check_id).toBe("check-1");
   });
 });

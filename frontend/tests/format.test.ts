@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  claimVerificationStatusLabel,
+  claimVerificationStatusTone,
   documentStatusTone,
   fileExtensionLabel,
   formatBytes,
@@ -39,5 +41,16 @@ describe("format helpers", () => {
     expect(fileExtensionLabel("notes.PDF")).toBe("PDF");
     expect(fileExtensionLabel("readme.txt")).toBe("TXT");
     expect(fileExtensionLabel("data.csv")).toBe("FILE");
+  });
+
+  it("labels only the three semantic claim verdicts", () => {
+    expect(claimVerificationStatusLabel("supported")).toBe("Supported");
+    expect(claimVerificationStatusTone("supported")).toBe("success");
+    expect(claimVerificationStatusLabel("contradicted")).toBe("Contradicted");
+    expect(claimVerificationStatusTone("contradicted")).toBe("error");
+    expect(claimVerificationStatusLabel("neutral")).toBe("Neutral");
+    expect(claimVerificationStatusTone("neutral")).toBe("neutral");
+    expect(claimVerificationStatusLabel(null)).toBe("Neutral");
+    expect(claimVerificationStatusTone(null)).toBe("neutral");
   });
 });

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import documents, health, rag, retrieval
+from app.api import documents, hallucination, health, rag, retrieval, verification
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -25,13 +25,16 @@ async def lifespan(app: FastAPI):
     settings.resolved_data_directory.mkdir(parents=True, exist_ok=True)
     settings.resolved_chroma_directory.mkdir(parents=True, exist_ok=True)
     logger.info(
-        "Starting %s v%s (env=%s, embedding=%s, collection=%s, llm_provider=%s)",
+        "Starting %s v%s (env=%s, embedding=%s, collection=%s, "
+        "llm_provider=%s, nli_backend=%s, nli_model=%s)",
         app.title,
         settings.app_version,
         settings.app_env,
         settings.embedding_model_name,
         settings.chroma_collection_name,
         settings.llm_provider_normalised or "unconfigured",
+        settings.verification_nli_backend,
+        settings.verification_nli_model_name,
     )
     yield
     logger.info("Shutting down %s", app.title)
@@ -44,10 +47,11 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Multilingual Hallucination Localization API",
         description=(
-            "Phase 1-3 backend: document ingestion, multilingual embeddings, "
-            "vector retrieval, and evidence-grounded question answering. "
-            "Hallucination detection, localization, and repair are added in "
-            "later phases."
+            "Phase 1-4A backend: document ingestion, multilingual embeddings, "
+            "vector retrieval, evidence-grounded question answering, and "
+            "claim-level verification against retrieved evidence. "
+            "Hallucination localization, repair, and re-verification are added "
+            "in later phases."
         ),
         version=__version__,
         lifespan=lifespan,
@@ -94,6 +98,8 @@ def create_app() -> FastAPI:
     api_router.include_router(documents.router)
     api_router.include_router(retrieval.router)
     api_router.include_router(rag.router)
+    api_router.include_router(verification.router)
+    api_router.include_router(hallucination.router)
     app.include_router(api_router)
 
     @app.get("/", include_in_schema=False)

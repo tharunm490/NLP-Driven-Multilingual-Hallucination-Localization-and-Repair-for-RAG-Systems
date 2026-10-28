@@ -1428,6 +1428,104 @@ textarea {
   margin-top: 6px;
 }
 
+/* ---------- Hallucination Checks ---------- */
+
+.answer-highlight-text {
+  white-space: pre-wrap;
+  line-height: 1.9;
+}
+
+.hallucination-mark {
+  display: inline;
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.hallucination-mark:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.hallucination-mark-supported {
+  background: var(--success-soft);
+  border-bottom-color: var(--success);
+}
+
+.hallucination-mark-potentially_hallucinated {
+  background: var(--error-soft);
+  border-bottom-color: var(--error);
+}
+
+.hallucination-mark-needs_review {
+  background: var(--warning-soft);
+  border-bottom-color: var(--warning);
+}
+
+.hallucination-mark-selected {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.hallucination-inspector {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.hallucination-inspector p {
+  margin: 6px 0 0;
+}
+
+.hallucination-inspector-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.claim-text-button {
+  display: block;
+  max-width: 440px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.claim-text-button:hover,
+.claim-text-button:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.hallucination-disagreement {
+  margin-top: 5px;
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hallucination-expanded-claim {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 1024px) {

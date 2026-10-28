@@ -74,6 +74,100 @@ class Settings(BaseSettings):
     rag_distance_filter_enabled: bool = True
     rag_max_distance: float = Field(default=0.75, ge=0.0, le=2.0)
     rag_generation_without_evidence: bool = False
+    # Completed Ask responses are retained briefly in memory so the
+    # Hallucination Checks page can reuse the exact answer without rerunning
+    # retrieval or generation. Only the opaque result ID is stored client-side.
+    rag_result_cache_size: int = Field(default=32, ge=1, le=500)
+    rag_result_ttl_seconds: float = Field(default=3600.0, gt=0.0, le=86400.0)
+
+    # Evidence sufficiency assessment (pre-generation decision layer)
+    rag_evidence_assessment_mode: Literal["auto", "llm", "heuristic"] = "auto"
+    rag_evidence_assessment_fallback_enabled: bool = True
+    rag_assessment_max_chunks: int = Field(default=8, ge=1, le=50)
+    rag_assessment_max_evidence_chars: int = Field(default=12000, ge=500, le=100000)
+    # Only used by the conservative lexical fallback, never as the primary
+    # sufficiency signal when an LLM judge is available.
+    rag_lexical_sufficient_coverage: float = Field(default=0.6, ge=0.0, le=1.0)
+    rag_lexical_partial_coverage: float = Field(default=0.35, ge=0.0, le=1.0)
+
+    # Claim-level verification (Phase 4A)
+    verification_enabled: bool = True
+    # The extractor is allowed to find more claims than the verifier checks so
+    # that skipped claims can be reported explicitly instead of disappearing.
+    verification_max_extracted_claims: int = Field(default=64, ge=1, le=500)
+    verification_max_claims: int = Field(default=20, ge=1, le=200)
+    # Safety ceiling only. The default matches the largest retrievable top_k so
+    # that every retrieved chunk is compared with every checked claim.
+    verification_max_evidence_per_claim: int = Field(default=50, ge=1, le=50)
+    # Hard ceiling for expensive NLI work. Pairs beyond this limit remain
+    # visible in the response as not evaluated instead of being silently lost.
+    verification_max_nli_pairs: int = Field(default=250, ge=1, le=1000)
+    # Maximum size of a focused evidence context around the best-matching
+    # sentence when an entire chunk does not fit the NLI token limit.
+    verification_primary_window_tokens: int = Field(default=256, ge=64, le=2048)
+    verification_deadline_seconds: float = Field(default=120.0, gt=0.0, le=1800.0)
+    # Minimum claim-term/semantic relevance before a raw NLI verdict can count
+    # toward the final claim status.
+    verification_min_evidence_relevance: float = Field(default=0.5, ge=0.0, le=1.0)
+    verification_max_concurrent_requests: int = Field(default=1, ge=1, le=16)
+    verification_queue_wait_seconds: float = Field(default=5.0, ge=0.0, le=60.0)
+    verification_max_queued_requests: int = Field(default=2, ge=0, le=64)
+    verification_nli_model_name: str = "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli"
+    verification_nli_backend: Literal["local", "onnx", "hf_endpoint"] = "local"
+    verification_nli_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    verification_nli_batch_size: int = Field(default=8, ge=1, le=128)
+    verification_nli_max_batch_tokens: int = Field(default=8192, ge=256, le=131072)
+    verification_nli_cache_size: int = Field(default=256, ge=0, le=100000)
+    verification_nli_num_threads: int = Field(default=0, ge=0, le=64)
+    verification_nli_onnx_model_path: str = ""
+    verification_nli_onnx_provider: Literal[
+        "CPUExecutionProvider", "CUDAExecutionProvider"
+    ] = "CPUExecutionProvider"
+    verification_nli_onnx_intra_threads: int = Field(default=0, ge=0, le=64)
+    verification_nli_onnx_inter_threads: int = Field(default=1, ge=0, le=64)
+    verification_nli_hosted_batch_size: int = Field(default=1, ge=1, le=32)
+    verification_nli_max_concurrency: int = Field(default=2, ge=1, le=8)
+    verification_nli_max_tokens: int = Field(default=256, ge=64, le=2048)
+    verification_nli_endpoint_url: str = ""
+    verification_nli_api_key: SecretStr = SecretStr("")
+    verification_nli_timeout_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
+    verification_nli_max_retries: int = Field(default=2, ge=0, le=5)
+    verification_nli_retry_backoff_seconds: float = Field(
+        default=0.5, ge=0.0, le=10.0
+    )
+    # Additional orchestration-level retries. A transient local-model failure
+    # must not discard every remaining claim-evidence comparison.
+    verification_nli_engine_retries: int = Field(default=2, ge=0, le=5)
+    verification_nli_entailment_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    verification_nli_contradiction_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    verification_ner_enabled: bool = True
+    verification_ner_model_name: str = "Davlan/xlm-roberta-base-wikiann-ner"
+    verification_ner_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    verification_ner_max_tokens: int = Field(default=512, ge=32, le=2048)
+
+    # Dedicated hallucination groundedness detector. This is intentionally
+    # separate from the NLI verifier so the two signals remain independent.
+    hallucination_enabled: bool = True
+    hallucination_model_name: str = "Horizon-Labs/hallucination-guard-base"
+    hallucination_model_device: Literal["auto", "cpu", "cuda", "mps"] = "auto"
+    hallucination_model_local_files_only: bool = False
+    hallucination_model_max_tokens: int = Field(default=2048, ge=32, le=8192)
+    hallucination_model_batch_size: int = Field(default=8, ge=1, le=128)
+    # Optional override for checkpoints whose config exposes generic labels
+    # such as LABEL_0/LABEL_1 instead of UNSUPPORTED/SUPPORTED.
+    hallucination_supported_label_index: int | None = Field(default=None, ge=0, le=1)
+    hallucination_support_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    hallucination_review_margin: float = Field(default=0.05, ge=0.0, le=0.5)
+    hallucination_max_claims: int = Field(default=64, ge=1, le=500)
+    hallucination_max_evidence_per_claim: int = Field(default=5, ge=1, le=50)
+    hallucination_max_evidence_chars: int = Field(
+        default=4000, ge=200, le=100000
+    )
+    hallucination_max_pairs: int = Field(default=500, ge=1, le=2000)
+    hallucination_deadline_seconds: float = Field(
+        default=120.0, gt=0.0, le=1800.0
+    )
+    hallucination_cache_size: int = Field(default=32, ge=1, le=500)
 
     # Generative LLM (Phase 3)
     llm_provider: str = ""
@@ -92,6 +186,54 @@ class Settings(BaseSettings):
     def validate_chunking(self) -> "Settings":
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
+        if self.rag_lexical_partial_coverage > self.rag_lexical_sufficient_coverage:
+            raise ValueError(
+                "RAG_LEXICAL_PARTIAL_COVERAGE must not exceed "
+                "RAG_LEXICAL_SUFFICIENT_COVERAGE"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_verification_windows(self) -> "Settings":
+        if self.verification_primary_window_tokens > self.verification_nli_max_tokens:
+            raise ValueError(
+                "VERIFICATION_PRIMARY_WINDOW_TOKENS must not exceed "
+                "VERIFICATION_NLI_MAX_TOKENS"
+            )
+        if self.verification_max_extracted_claims < self.verification_max_claims:
+            raise ValueError(
+                "VERIFICATION_MAX_EXTRACTED_CLAIMS must be at least "
+                "VERIFICATION_MAX_CLAIMS so skipped claims can be reported"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_nli_backend(self) -> "Settings":
+        if self.verification_nli_backend == "onnx":
+            if not self.verification_nli_onnx_model_path.strip():
+                raise ValueError(
+                    "VERIFICATION_NLI_ONNX_MODEL_PATH is required when "
+                    "VERIFICATION_NLI_BACKEND=onnx"
+                )
+            return self
+        if self.verification_nli_backend != "hf_endpoint":
+            return self
+        endpoint = self.verification_nli_endpoint_url.strip()
+        if not endpoint:
+            raise ValueError(
+                "VERIFICATION_NLI_ENDPOINT_URL is required when "
+                "VERIFICATION_NLI_BACKEND=hf_endpoint"
+            )
+        if not endpoint.startswith("https://"):
+            raise ValueError(
+                "VERIFICATION_NLI_ENDPOINT_URL must start with https:// "
+                "to protect the API key in transit"
+            )
+        if not self.resolved_verification_nli_api_key:
+            raise ValueError(
+                "VERIFICATION_NLI_API_KEY is required when "
+                "VERIFICATION_NLI_BACKEND=hf_endpoint"
+            )
         return self
 
     # -- Derived values -----------------------------------------------------
@@ -142,6 +284,20 @@ class Settings(BaseSettings):
     @property
     def effective_tokenizer_model_name(self) -> str:
         return self.tokenizer_model_name or self.embedding_model_name
+
+    # -- NLI helpers --------------------------------------------------------
+
+    @property
+    def resolved_verification_nli_api_key(self) -> str:
+        secret = self.verification_nli_api_key
+        return secret.get_secret_value().strip() if secret else ""
+
+    @property
+    def resolved_verification_nli_onnx_model_path(self) -> Path:
+        value = self.verification_nli_onnx_model_path.strip()
+        if not value:
+            return Path("")
+        return self._resolve(Path(value))
 
     # -- LLM helpers --------------------------------------------------------
 

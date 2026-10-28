@@ -296,6 +296,11 @@ class QueryLanguageDetector:
         if reliable:
             return LanguageDetection(top.code, top.confidence, True, method, mixed=False)
 
+        if not _is_mixed_script(stripped):
+            confirmed = self._confirm_with_fallback(sample, top.code)
+            if confirmed is not None:
+                return confirmed
+
         reason = "mixed_language" if mixed else "low_confidence"
         if self._fallback_language:
             return LanguageDetection(
@@ -305,6 +310,39 @@ class QueryLanguageDetector:
         # Best-effort guess is still returned but flagged as not reliable; the
         # RAG response must not present it as a confident detection.
         return LanguageDetection(top.code, top.confidence, False, method, mixed=mixed, reason=reason)
+
+    def _confirm_with_fallback(
+        self, text: str, primary_code: str
+    ) -> LanguageDetection | None:
+        fallback = self._fallback_backend
+        if fallback is self._backend or not fallback.is_available():
+            return None
+        try:
+            scores = sorted(
+                fallback.detect(text),
+                key=lambda item: item.confidence,
+                reverse=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - detection must not break RAG
+            logger.warning("Language backend '%s' raised: %s", fallback.name, exc)
+            return None
+        if not scores:
+            return None
+        top = scores[0]
+        runner_up = scores[1] if len(scores) > 1 else None
+        margin = top.confidence - runner_up.confidence if runner_up else 1.0
+        if (
+            top.code == primary_code
+            and top.confidence >= self._min_confidence
+            and margin >= self._min_margin
+        ):
+            return LanguageDetection(
+                top.code,
+                top.confidence,
+                True,
+                f"{self._backend.name}+{fallback.name}",
+            )
+        return None
 
     def _detect_with_backends(self, text: str) -> tuple[list[LanguageScore], str]:
         for backend in (self._backend, self._fallback_backend):

@@ -21,6 +21,7 @@ backend/data/chroma/
 backend/data/*.sqlite3
 backend/data/*.sqlite3-*
 backend/data/tmp/
+backend/data/onnx/
 
 # Local logs
 *.log

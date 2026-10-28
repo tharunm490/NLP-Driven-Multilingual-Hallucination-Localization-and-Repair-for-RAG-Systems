@@ -1,4 +1,10 @@
-import type { DocumentStatus, UploadItemStatus } from "./types";
+import type {
+  AnswerStatus,
+  ClaimVerificationStatus,
+  DocumentStatus,
+  HallucinationVerdict,
+  UploadItemStatus,
+} from "./types";
 
 export type Tone = "success" | "warning" | "error" | "neutral" | "info";
 
@@ -86,6 +92,105 @@ export function uploadStatusTone(status: UploadItemStatus): Tone {
     case "failed":
       return "error";
     case "rejected":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+export function answerStatusLabel(status: AnswerStatus | null | undefined): string {
+  switch (status) {
+    case "grounded":
+      return "Grounded answer";
+    case "contradicted":
+      return "Contradicted by evidence";
+    case "verification_pending":
+      return "Verification pending";
+    case "partially_grounded":
+      return "Partially supported";
+    case "insufficient_evidence":
+      return "Insufficient evidence";
+    case "irrelevant_retrieval":
+      return "No relevant evidence found";
+    default:
+      return "Status unavailable";
+  }
+}
+
+export function answerStatusTone(status: AnswerStatus | null | undefined): Tone {
+  switch (status) {
+    case "grounded":
+      return "success";
+    case "contradicted":
+      return "error";
+    case "verification_pending":
+      return "info";
+    case "partially_grounded":
+      return "warning";
+    case "insufficient_evidence":
+    case "irrelevant_retrieval":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+export function answerStatusShowsAbstention(status: AnswerStatus | null | undefined): boolean {
+  return status === "insufficient_evidence" || status === "irrelevant_retrieval";
+}
+
+export function claimVerificationStatusLabel(
+  status: ClaimVerificationStatus | null | undefined,
+): string {
+  switch (status) {
+    case "supported":
+      return "Supported";
+    case "contradicted":
+      return "Contradicted";
+    case "neutral":
+    default:
+      return "Neutral";
+  }
+}
+
+export function claimVerificationStatusTone(
+  status: ClaimVerificationStatus | null | undefined,
+): Tone {
+  switch (status) {
+    case "supported":
+      return "success";
+    case "contradicted":
+      return "error";
+    case "neutral":
+    default:
+      return "neutral";
+  }
+}
+
+export function hallucinationVerdictLabel(
+  verdict: HallucinationVerdict | null | undefined,
+): string {
+  switch (verdict) {
+    case "supported":
+      return "Supported";
+    case "potentially_hallucinated":
+      return "Potentially hallucinated";
+    case "needs_review":
+      return "Needs review";
+    default:
+      return "Not checked";
+  }
+}
+
+export function hallucinationVerdictTone(
+  verdict: HallucinationVerdict | null | undefined,
+): Tone {
+  switch (verdict) {
+    case "supported":
+      return "success";
+    case "potentially_hallucinated":
+      return "error";
+    case "needs_review":
       return "warning";
     default:
       return "neutral";

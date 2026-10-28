@@ -1,0 +1,1320 @@
+{
+  "generated_at": "2026-10-27T13:09:22.133071+00:00",
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10",
+    "cpu_count": 12,
+    "physical_cpu_count": 6,
+    "total_memory_gb": 15.3,
+    "torch": "2.14.1",
+    "transformers": "5.20.1",
+    "onnx": "1.23.2",
+    "onnxruntime": "1.31.0",
+    "psutil": "7.2.2"
+  },
+  "dataset": {
+    "nli_cases": 36,
+    "short_cases": 18,
+    "long_cases": 18,
+    "engine_scenarios": [
+      {
+        "scenario_id": "short-request",
+        "claims": 3,
+        "evidence_chunks": 3
+      },
+      {
+        "scenario_id": "long-request",
+        "claims": 13,
+        "evidence_chunks": 6
+      }
+    ],
+    "note": "Small controlled ISO/IEC 27001 fixture; not a substitute for a public NLI benchmark."
+  },
+  "onnx_available": false,
+  "nli_results": [],
+  "engine_results": [
+    {
+      "config": {
+        "config_id": "unbatched-exhaustive",
+        "max_claims": 20,
+        "max_extracted_claims": 64,
+        "max_evidence_per_claim": 50,
+        "max_nli_pairs": 250,
+        "primary_window_tokens": 192,
+        "nli_max_tokens": 384,
+        "nli_batch_size": 1,
+        "nli_max_batch_tokens": 4096,
+        "min_evidence_relevance": 0.5,
+        "nli_backend": "local",
+        "contradiction_threshold": 0.6,
+        "deadline_seconds": 600.0,
+        "warm_repeat": true
+      },
+      "model_state": {
+        "nli_model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+        "nli_max_pair_tokens": 384,
+        "ner_model": "Davlan/xlm-roberta-base-wikiann-ner"
+      },
+      "load_ms": 23588.4,
+      "nli_load_ms": 16910.7,
+      "ner_load_ms": 6677.7,
+      "runs": [
+        {
+          "run_id": "long-first",
+          "scenario_id": "long-request",
+          "wall_ms": 21945.7,
+          "verification_ms": 21945.7,
+          "timings": {
+            "claim_extraction_ms": 1242.964,
+            "evidence_selection_ms": 64.908,
+            "nli_ms": 20633.748,
+            "aggregation_ms": 3.89
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 13,
+            "claims_checked": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "supported": 6,
+            "contradicted": 3,
+            "insufficient_evidence": 4,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 6,
+            "evidence_total": 6,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 13,
+            "actual_claims": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "checked": 13,
+            "coverage": 1.0,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 12,
+            "accuracy": 0.9231,
+            "checked_accuracy": 0.9231,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 78,
+            "status_counts": {
+              "supported": 6,
+              "contradicted": 3,
+              "insufficient_evidence": 4,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Information security preserves integrity.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves integrity.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9820895195007324
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              },
+              {
+                "claim": "Certification audits are performed by an accredited certification body.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Certification audits are performed by an accredited certification body.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9923372864723206
+              },
+              {
+                "claim": "Annex A controls are organised into four themes.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Annex A controls are organised into four themes.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.993845522403717
+              },
+              {
+                "claim": "Repeated risk assessments must produce inconsistent results.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Repeated risk assessments must produce inconsistent results.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9984776377677917
+              },
+              {
+                "claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "expected": "contradicted",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9879932403564453
+              },
+              {
+                "claim": "The scope statement must be kept confidential.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "The scope statement must be kept confidential.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9776684045791626
+              },
+              {
+                "claim": "Certification audits are performed by the organisation itself.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Certification audits are performed by the organisation itself.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9971731901168823
+              },
+              {
+                "claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9966128468513489
+              },
+              {
+                "claim": "The annual certification fee is 10,000 USD.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "The annual certification fee is 10,000 USD.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9989954829216003
+              },
+              {
+                "claim": "Annex A contains exactly 93 controls.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Annex A contains exactly 93 controls.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9939676523208618
+              }
+            ],
+            "extra_claims": []
+          }
+        },
+        {
+          "run_id": "long-repeat",
+          "scenario_id": "long-request",
+          "wall_ms": 898.2,
+          "verification_ms": 898.2,
+          "timings": {
+            "claim_extraction_ms": 825.881,
+            "evidence_selection_ms": 67.446,
+            "nli_ms": 0.779,
+            "aggregation_ms": 3.88
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 13,
+            "claims_checked": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "supported": 6,
+            "contradicted": 3,
+            "insufficient_evidence": 4,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 6,
+            "evidence_total": 6,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 13,
+            "actual_claims": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "checked": 13,
+            "coverage": 1.0,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 12,
+            "accuracy": 0.9231,
+            "checked_accuracy": 0.9231,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 78,
+            "status_counts": {
+              "supported": 6,
+              "contradicted": 3,
+              "insufficient_evidence": 4,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Information security preserves integrity.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves integrity.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9820895195007324
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              },
+              {
+                "claim": "Certification audits are performed by an accredited certification body.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Certification audits are performed by an accredited certification body.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9923372864723206
+              },
+              {
+                "claim": "Annex A controls are organised into four themes.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Annex A controls are organised into four themes.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.993845522403717
+              },
+              {
+                "claim": "Repeated risk assessments must produce inconsistent results.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Repeated risk assessments must produce inconsistent results.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9984776377677917
+              },
+              {
+                "claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "expected": "contradicted",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9879932403564453
+              },
+              {
+                "claim": "The scope statement must be kept confidential.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "The scope statement must be kept confidential.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9776684045791626
+              },
+              {
+                "claim": "Certification audits are performed by the organisation itself.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Certification audits are performed by the organisation itself.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9971731901168823
+              },
+              {
+                "claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9966128468513489
+              },
+              {
+                "claim": "The annual certification fee is 10,000 USD.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "The annual certification fee is 10,000 USD.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9989954829216003
+              },
+              {
+                "claim": "Annex A contains exactly 93 controls.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Annex A contains exactly 93 controls.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9939676523208618
+              }
+            ],
+            "extra_claims": []
+          }
+        },
+        {
+          "run_id": "short-warm",
+          "scenario_id": "short-request",
+          "wall_ms": 237.7,
+          "verification_ms": 237.6,
+          "timings": {
+            "claim_extraction_ms": 226.993,
+            "evidence_selection_ms": 10.019,
+            "nli_ms": 0.099,
+            "aggregation_ms": 0.444
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 3,
+            "claims_checked": 3,
+            "claims_complete": 3,
+            "claims_incomplete": 0,
+            "supported": 3,
+            "contradicted": 0,
+            "insufficient_evidence": 0,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 3,
+            "evidence_total": 3,
+            "pairs_expected": 9,
+            "pairs_evaluated": 9,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 3,
+            "actual_claims": 3,
+            "claims_complete": 3,
+            "claims_incomplete": 0,
+            "checked": 3,
+            "coverage": 1.0,
+            "pairs_expected": 9,
+            "pairs_evaluated": 9,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 3,
+            "accuracy": 1.0,
+            "checked_accuracy": 1.0,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 9,
+            "status_counts": {
+              "supported": 3,
+              "contradicted": 0,
+              "insufficient_evidence": 0,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              }
+            ],
+            "extra_claims": []
+          }
+        }
+      ],
+      "resources": {
+        "peak_rss_mb": 3488.6,
+        "average_cpu_percent": 375.1,
+        "cpu_samples": 697,
+        "warning": null
+      }
+    },
+    {
+      "config": {
+        "config_id": "batched-exhaustive",
+        "max_claims": 20,
+        "max_extracted_claims": 64,
+        "max_evidence_per_claim": 50,
+        "max_nli_pairs": 250,
+        "primary_window_tokens": 192,
+        "nli_max_tokens": 256,
+        "nli_batch_size": 8,
+        "nli_max_batch_tokens": 8192,
+        "min_evidence_relevance": 0.5,
+        "nli_backend": "local",
+        "contradiction_threshold": 0.6,
+        "deadline_seconds": 120.0,
+        "warm_repeat": true
+      },
+      "model_state": {
+        "nli_model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+        "nli_max_pair_tokens": 256,
+        "ner_model": "Davlan/xlm-roberta-base-wikiann-ner"
+      },
+      "load_ms": 22790.2,
+      "nli_load_ms": 17175.8,
+      "ner_load_ms": 5614.4,
+      "runs": [
+        {
+          "run_id": "long-first",
+          "scenario_id": "long-request",
+          "wall_ms": 16919.2,
+          "verification_ms": 16919.1,
+          "timings": {
+            "claim_extraction_ms": 908.832,
+            "evidence_selection_ms": 54.29,
+            "nli_ms": 15952.188,
+            "aggregation_ms": 3.609
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 13,
+            "claims_checked": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "supported": 6,
+            "contradicted": 3,
+            "insufficient_evidence": 4,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 6,
+            "evidence_total": 6,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 13,
+            "actual_claims": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "checked": 13,
+            "coverage": 1.0,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 12,
+            "accuracy": 0.9231,
+            "checked_accuracy": 0.9231,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 78,
+            "status_counts": {
+              "supported": 6,
+              "contradicted": 3,
+              "insufficient_evidence": 4,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Information security preserves integrity.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves integrity.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9820895195007324
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              },
+              {
+                "claim": "Certification audits are performed by an accredited certification body.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Certification audits are performed by an accredited certification body.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9923372864723206
+              },
+              {
+                "claim": "Annex A controls are organised into four themes.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Annex A controls are organised into four themes.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.993845522403717
+              },
+              {
+                "claim": "Repeated risk assessments must produce inconsistent results.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Repeated risk assessments must produce inconsistent results.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9984776377677917
+              },
+              {
+                "claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "expected": "contradicted",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9879932403564453
+              },
+              {
+                "claim": "The scope statement must be kept confidential.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "The scope statement must be kept confidential.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9776684045791626
+              },
+              {
+                "claim": "Certification audits are performed by the organisation itself.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Certification audits are performed by the organisation itself.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9971731901168823
+              },
+              {
+                "claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9966128468513489
+              },
+              {
+                "claim": "The annual certification fee is 10,000 USD.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "The annual certification fee is 10,000 USD.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9989954829216003
+              },
+              {
+                "claim": "Annex A contains exactly 93 controls.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Annex A contains exactly 93 controls.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9939676523208618
+              }
+            ],
+            "extra_claims": []
+          }
+        },
+        {
+          "run_id": "long-repeat",
+          "scenario_id": "long-request",
+          "wall_ms": 954.5,
+          "verification_ms": 954.5,
+          "timings": {
+            "claim_extraction_ms": 890.048,
+            "evidence_selection_ms": 61.417,
+            "nli_ms": 0.319,
+            "aggregation_ms": 2.536
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 13,
+            "claims_checked": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "supported": 6,
+            "contradicted": 3,
+            "insufficient_evidence": 4,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 6,
+            "evidence_total": 6,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 13,
+            "actual_claims": 13,
+            "claims_complete": 13,
+            "claims_incomplete": 0,
+            "checked": 13,
+            "coverage": 1.0,
+            "pairs_expected": 78,
+            "pairs_evaluated": 78,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 12,
+            "accuracy": 0.9231,
+            "checked_accuracy": 0.9231,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 78,
+            "status_counts": {
+              "supported": 6,
+              "contradicted": 3,
+              "insufficient_evidence": 4,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Information security preserves integrity.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves integrity.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9820895195007324
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              },
+              {
+                "claim": "Certification audits are performed by an accredited certification body.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Certification audits are performed by an accredited certification body.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9923372864723206
+              },
+              {
+                "claim": "Annex A controls are organised into four themes.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Annex A controls are organised into four themes.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.993845522403717
+              },
+              {
+                "claim": "Repeated risk assessments must produce inconsistent results.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Repeated risk assessments must produce inconsistent results.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9984776377677917
+              },
+              {
+                "claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "expected": "contradicted",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9879932403564453
+              },
+              {
+                "claim": "The scope statement must be kept confidential.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "The scope statement must be kept confidential.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9776684045791626
+              },
+              {
+                "claim": "Certification audits are performed by the organisation itself.",
+                "expected": "contradicted",
+                "actual": "contradicted",
+                "matched_claim": "Certification audits are performed by the organisation itself.",
+                "similarity": 1.0,
+                "label": "contradiction",
+                "confidence": 0.9971731901168823
+              },
+              {
+                "claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9966128468513489
+              },
+              {
+                "claim": "The annual certification fee is 10,000 USD.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "The annual certification fee is 10,000 USD.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9989954829216003
+              },
+              {
+                "claim": "Annex A contains exactly 93 controls.",
+                "expected": "insufficient_evidence",
+                "actual": "insufficient_evidence",
+                "matched_claim": "Annex A contains exactly 93 controls.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9939676523208618
+              }
+            ],
+            "extra_claims": []
+          }
+        },
+        {
+          "run_id": "short-warm",
+          "scenario_id": "short-request",
+          "wall_ms": 208.2,
+          "verification_ms": 208.2,
+          "timings": {
+            "claim_extraction_ms": 198.675,
+            "evidence_selection_ms": 8.838,
+            "nli_ms": 0.086,
+            "aggregation_ms": 0.529
+          },
+          "status": "completed",
+          "summary": {
+            "claims_total": 3,
+            "claims_checked": 3,
+            "claims_complete": 3,
+            "claims_incomplete": 0,
+            "supported": 3,
+            "contradicted": 0,
+            "insufficient_evidence": 0,
+            "conflicting": 0,
+            "incomplete": 0,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 3,
+            "evidence_total": 3,
+            "pairs_expected": 9,
+            "pairs_evaluated": 9,
+            "pairs_missing": 0
+          },
+          "warnings": [],
+          "error": null,
+          "metrics": {
+            "expected_claims": 3,
+            "actual_claims": 3,
+            "claims_complete": 3,
+            "claims_incomplete": 0,
+            "checked": 3,
+            "coverage": 1.0,
+            "pairs_expected": 9,
+            "pairs_evaluated": 9,
+            "pairs_missing": 0,
+            "pair_coverage": 1.0,
+            "correct": 3,
+            "accuracy": 1.0,
+            "checked_accuracy": 1.0,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 9,
+            "status_counts": {
+              "supported": 3,
+              "contradicted": 0,
+              "insufficient_evidence": 0,
+              "conflicting_evidence": 0,
+              "incomplete": 0,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "supported",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9936845898628235
+              }
+            ],
+            "extra_claims": []
+          }
+        }
+      ],
+      "resources": {
+        "peak_rss_mb": 3258.1,
+        "average_cpu_percent": 346.0,
+        "cpu_samples": 619,
+        "warning": null
+      }
+    },
+    {
+      "config": {
+        "config_id": "legacy-8x2-12pair",
+        "max_claims": 8,
+        "max_extracted_claims": 64,
+        "max_evidence_per_claim": 2,
+        "max_nli_pairs": 12,
+        "primary_window_tokens": 192,
+        "nli_max_tokens": 256,
+        "nli_batch_size": 8,
+        "nli_max_batch_tokens": 8192,
+        "min_evidence_relevance": 0.5,
+        "nli_backend": "local",
+        "contradiction_threshold": 0.6,
+        "deadline_seconds": 120.0,
+        "warm_repeat": false
+      },
+      "model_state": {
+        "nli_model": "MoritzLaurer/mDeBERTa-v3-base-mnli-xnli",
+        "nli_max_pair_tokens": 256,
+        "ner_model": "Davlan/xlm-roberta-base-wikiann-ner"
+      },
+      "load_ms": 36596.0,
+      "nli_load_ms": 25361.1,
+      "ner_load_ms": 11234.9,
+      "runs": [
+        {
+          "run_id": "long-first",
+          "scenario_id": "long-request",
+          "wall_ms": 5372.0,
+          "verification_ms": 5372.0,
+          "timings": {
+            "claim_extraction_ms": 1953.234,
+            "evidence_selection_ms": 24.694,
+            "nli_ms": 3389.656,
+            "aggregation_ms": 3.826
+          },
+          "status": "partial",
+          "summary": {
+            "claims_total": 13,
+            "claims_checked": 6,
+            "claims_complete": 0,
+            "claims_incomplete": 13,
+            "supported": 0,
+            "contradicted": 0,
+            "insufficient_evidence": 0,
+            "conflicting": 0,
+            "incomplete": 6,
+            "verification_error": 0,
+            "unchecked": 7,
+            "evidence_passed": 6,
+            "evidence_total": 6,
+            "pairs_expected": 78,
+            "pairs_evaluated": 12,
+            "pairs_missing": 66
+          },
+          "warnings": [
+            "Verification was capped at 8 claims; 5 claim(s) were left unchecked. Claims with numbers, dates, negation, or quantifiers were prioritized.",
+            "The configured NLI pair budget was exhausted before this comparison was evaluated.",
+            "66 of 78 expected claim-evidence comparison(s) were not evaluated. The summary marks the affected claims incomplete."
+          ],
+          "error": null,
+          "metrics": {
+            "expected_claims": 13,
+            "actual_claims": 13,
+            "claims_complete": 0,
+            "claims_incomplete": 13,
+            "checked": 0,
+            "coverage": 0.0,
+            "pairs_expected": 78,
+            "pairs_evaluated": 12,
+            "pairs_missing": 66,
+            "pair_coverage": 0.1538,
+            "correct": 0,
+            "accuracy": 0.0,
+            "checked_accuracy": null,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 12,
+            "status_counts": {
+              "supported": 0,
+              "contradicted": 0,
+              "insufficient_evidence": 0,
+              "conflicting_evidence": 0,
+              "incomplete": 6,
+              "verification_error": 0,
+              "unchecked": 7
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Information security preserves integrity.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "Information security preserves integrity.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9820895195007324
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9213456511497498
+              },
+              {
+                "claim": "Certification audits are performed by an accredited certification body.",
+                "expected": "supported",
+                "actual": "unchecked",
+                "matched_claim": "Certification audits are performed by an accredited certification body.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "Annex A controls are organised into four themes.",
+                "expected": "supported",
+                "actual": "unchecked",
+                "matched_claim": "Annex A controls are organised into four themes.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "Repeated risk assessments must produce inconsistent results.",
+                "expected": "contradicted",
+                "actual": "unchecked",
+                "matched_claim": "Repeated risk assessments must produce inconsistent results.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "expected": "contradicted",
+                "actual": "incomplete",
+                "matched_claim": "Internal audits are conducted only after a nonconformity occurs.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9879932403564453
+              },
+              {
+                "claim": "The scope statement must be kept confidential.",
+                "expected": "contradicted",
+                "actual": "unchecked",
+                "matched_claim": "The scope statement must be kept confidential.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "Certification audits are performed by the organisation itself.",
+                "expected": "contradicted",
+                "actual": "unchecked",
+                "matched_claim": "Certification audits are performed by the organisation itself.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "expected": "insufficient_evidence",
+                "actual": "incomplete",
+                "matched_claim": "ISO/IEC 27001 requires a minimum staff count of 50 employees.",
+                "similarity": 1.0,
+                "label": "neutral",
+                "confidence": 0.9955095052719116
+              },
+              {
+                "claim": "The annual certification fee is 10,000 USD.",
+                "expected": "insufficient_evidence",
+                "actual": "unchecked",
+                "matched_claim": "The annual certification fee is 10,000 USD.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              },
+              {
+                "claim": "Annex A contains exactly 93 controls.",
+                "expected": "insufficient_evidence",
+                "actual": "unchecked",
+                "matched_claim": "Annex A contains exactly 93 controls.",
+                "similarity": 1.0,
+                "label": null,
+                "confidence": null
+              }
+            ],
+            "extra_claims": []
+          }
+        },
+        {
+          "run_id": "short-warm",
+          "scenario_id": "short-request",
+          "wall_ms": 592.9,
+          "verification_ms": 592.8,
+          "timings": {
+            "claim_extraction_ms": 574.738,
+            "evidence_selection_ms": 16.298,
+            "nli_ms": 0.146,
+            "aggregation_ms": 1.475
+          },
+          "status": "partial",
+          "summary": {
+            "claims_total": 3,
+            "claims_checked": 3,
+            "claims_complete": 0,
+            "claims_incomplete": 3,
+            "supported": 0,
+            "contradicted": 0,
+            "insufficient_evidence": 0,
+            "conflicting": 0,
+            "incomplete": 3,
+            "verification_error": 0,
+            "unchecked": 0,
+            "evidence_passed": 3,
+            "evidence_total": 3,
+            "pairs_expected": 9,
+            "pairs_evaluated": 6,
+            "pairs_missing": 3
+          },
+          "warnings": [
+            "3 of 9 expected claim-evidence comparison(s) were not evaluated. The summary marks the affected claims incomplete."
+          ],
+          "error": null,
+          "metrics": {
+            "expected_claims": 3,
+            "actual_claims": 3,
+            "claims_complete": 0,
+            "claims_incomplete": 3,
+            "checked": 0,
+            "coverage": 0.0,
+            "pairs_expected": 9,
+            "pairs_evaluated": 6,
+            "pairs_missing": 3,
+            "pair_coverage": 0.6667,
+            "correct": 0,
+            "accuracy": 0.0,
+            "checked_accuracy": null,
+            "false_support": 0,
+            "false_contradiction": 0,
+            "nli_windows": 6,
+            "status_counts": {
+              "supported": 0,
+              "contradicted": 0,
+              "insufficient_evidence": 0,
+              "conflicting_evidence": 0,
+              "incomplete": 3,
+              "verification_error": 0,
+              "unchecked": 0
+            },
+            "records": [
+              {
+                "claim": "Information security preserves confidentiality.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "Information security preserves confidentiality.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9931780099868774
+              },
+              {
+                "claim": "Internal audits are conducted at planned intervals.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "Internal audits are conducted at planned intervals.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9125850796699524
+              },
+              {
+                "claim": "The scope statement must be available as documented information.",
+                "expected": "supported",
+                "actual": "incomplete",
+                "matched_claim": "The scope statement must be available as documented information.",
+                "similarity": 1.0,
+                "label": "entailment",
+                "confidence": 0.9213456511497498
+              }
+            ],
+            "extra_claims": []
+          }
+        }
+      ],
+      "resources": {
+        "peak_rss_mb": 3436.9,
+        "average_cpu_percent": 154.2,
+        "cpu_samples": 512,
+        "warning": null
+      }
+    }
+  ],
+  "conclusions": [
+    "unbatched-exhaustive long request: 21.9s, 13/13 checked, 78/78 pairs evaluated, 100.0% claim coverage, 92.3% accuracy, 0 false support.",
+    "batched-exhaustive long request: 16.9s, 13/13 checked, 78/78 pairs evaluated, 100.0% claim coverage, 92.3% accuracy, 0 false support.",
+    "legacy-8x2-12pair long request: 5.4s, 0/13 checked, 12/78 pairs evaluated, 0.0% claim coverage, 0.0% accuracy, 0 false support."
+  ]
+}

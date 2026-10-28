@@ -2,6 +2,8 @@ import type {
   DeleteDocumentResponse,
   DocumentInfo,
   DocumentListResponse,
+  HallucinationCheckRequest,
+  HallucinationCheckResponse,
   HealthResponse,
   RagQueryRequest,
   RagQueryResponse,
@@ -13,7 +15,7 @@ import type {
 const DEFAULT_BASE_URL = "http://localhost:8000";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 10 * 60_000;
-const RAG_TIMEOUT_MS = 120_000;
+const RAG_TIMEOUT_MS = 10 * 60_000;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -24,6 +26,13 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.details = details;
+  }
+}
+
+export class RequestCancelledError extends ApiError {
+  constructor(message = "The request was cancelled.") {
+    super(message, 0);
+    this.name = "RequestCancelledError";
   }
 }
 
@@ -65,38 +74,64 @@ async function request<T>(
   path: string,
   init: RequestInit = {},
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+  }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  let response: Response;
   try {
-    response = await fetch(`${getApiBaseUrl()}${path}`, {
-      ...init,
-      signal: controller.signal,
-      cache: "no-store",
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new ApiError("The request timed out. Is the backend still processing?", 0);
+    let response: Response;
+    try {
+      response = await fetch(`${getApiBaseUrl()}${path}`, {
+        ...init,
+        signal: controller.signal,
+        cache: "no-store",
+      });
+    } catch (error) {
+      if (signal?.aborted) {
+        throw new RequestCancelledError();
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new ApiError("The request timed out. Is the backend still processing?", 0);
+      }
+      throw new ApiError(
+        `Could not reach the backend at ${getApiBaseUrl()}. Is the FastAPI server running?`,
+        0,
+      );
     }
-    throw new ApiError(
-      `Could not reach the backend at ${getApiBaseUrl()}. Is the FastAPI server running?`,
-      0,
-    );
+
+    const contentType = response.headers.get("content-type") ?? "";
+    let payload: unknown;
+    try {
+      payload = contentType.includes("application/json")
+        ? await response.json().catch(() => null)
+        : await response.text().catch(() => "");
+    } catch (error) {
+      if (signal?.aborted) {
+        throw new RequestCancelledError();
+      }
+      throw new ApiError("The backend response could not be read.", response.status);
+    }
+
+    if (signal?.aborted) {
+      throw new RequestCancelledError();
+    }
+    if (!response.ok) {
+      throw new ApiError(extractErrorMessage(payload), response.status, payload);
+    }
+    return payload as T;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", abortFromCaller);
   }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  const payload = contentType.includes("application/json")
-    ? await response.json().catch(() => null)
-    : await response.text().catch(() => "");
-
-  if (!response.ok) {
-    throw new ApiError(extractErrorMessage(payload), response.status, payload);
-  }
-  return payload as T;
 }
 
 function jsonInit(method: string, body: unknown): RequestInit {
@@ -142,10 +177,50 @@ export function search(payload: SearchRequest): Promise<SearchResponse> {
   return request<SearchResponse>("/api/retrieval/search", jsonInit("POST", payload));
 }
 
-export function askQuestion(payload: RagQueryRequest): Promise<RagQueryResponse> {
+export function askQuestion(
+  payload: RagQueryRequest,
+  options: { signal?: AbortSignal } = {},
+): Promise<RagQueryResponse> {
   return request<RagQueryResponse>(
     "/api/rag/query",
     jsonInit("POST", payload),
     RAG_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function getRagResult(
+  resultId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RagQueryResponse> {
+  return request<RagQueryResponse>(
+    `/api/rag/results/${encodeURIComponent(resultId)}`,
+    {},
+    DEFAULT_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function verifyRagResult(
+  resultId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RagQueryResponse> {
+  return request<RagQueryResponse>(
+    `/api/verification/results/${encodeURIComponent(resultId)}`,
+    { method: "POST" },
+    RAG_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function checkHallucinations(
+  payload: HallucinationCheckRequest,
+  options: { signal?: AbortSignal } = {},
+): Promise<HallucinationCheckResponse> {
+  return request<HallucinationCheckResponse>(
+    "/api/hallucination/check",
+    jsonInit("POST", payload),
+    RAG_TIMEOUT_MS,
+    options.signal,
   );
 }

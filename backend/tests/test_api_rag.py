@@ -6,9 +6,11 @@ from typing import Sequence
 
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_rag_service
+from app.api.deps import get_rag_service, get_rag_verification_service
 from app.core.config import Settings
 from app.core.errors import GenerationError
+from tests.rag_support import FixedEvidenceAssessor
+
 from app.services.generator import (
     ChatMessage,
     GenerationResult,
@@ -18,7 +20,9 @@ from app.services.generator import (
 from app.services.prompt_builder import PromptBuilder
 from app.services.query_language_detection import QueryLanguageDetector
 from app.services.rag_service import RagService
+from app.services.rag_verification_service import RagVerificationService
 from app.services.retrieval_service import RetrievalService
+from tests.verification_support import StubVerificationEngine
 
 DOCUMENT_TEXT = (
     "Acme Corporation is a technology company founded in 2015 in Paris, France."
@@ -52,7 +56,13 @@ def test_rag_query_happy_path(api_client: TestClient):
 
     assert body["question"] == QUESTION
     assert body["detected_language"] == "en"
-    assert body["answer_mode"] == "grounded"
+    assert body["answer_mode"] == "verification_pending"
+    assert body["answer_status"] == "verification_pending"
+    assert body["evidence_state"] == "sufficient_evidence"
+    assert body["verification"]["claim_level_verification"] is False
+    assert body["verification"]["status"] == "pending"
+    assert body["verification"]["details"] is None
+    assert body["timings"]["verification_ms"] == 0.0
     assert body["answer"]
     assert body["sources"]
     source = body["sources"][0]
@@ -66,6 +76,39 @@ def test_rag_query_happy_path(api_client: TestClient):
     assert body["generation"]["used_llm"] is True
     assert body["generation"]["provider"] == "mock"
     assert body["timings"]["total_ms"] >= 0
+    assert body["result_id"]
+
+    shared = api_client.get(f"/api/rag/results/{body['result_id']}")
+    assert shared.status_code == 200
+    assert shared.json()["answer"] == body["answer"]
+    assert shared.json()["sources"] == body["sources"]
+    assert shared.json()["question"] == QUESTION
+
+
+def test_rag_query_never_runs_claim_verification(
+    api_client: TestClient,
+    settings: Settings,
+):
+    upload(api_client, DOCUMENT_TEXT)
+    engine = StubVerificationEngine()
+    api_client.app.dependency_overrides[get_rag_verification_service] = (
+        lambda: RagVerificationService(
+            settings=settings,
+            verification_engine=engine,
+        )
+    )
+
+    response = api_client.post("/api/rag/query", json={"question": QUESTION})
+
+    assert response.status_code == 200
+    assert response.json()["verification"]["status"] == "pending"
+    assert engine.calls == []
+
+
+def test_rag_shared_result_is_not_found_after_restart(api_client: TestClient):
+    response = api_client.get("/api/rag/results/missing-result")
+    assert response.status_code == 404
+    assert "no longer available" in response.json()["detail"].lower()
 
 
 def test_rag_empty_store_returns_insufficient_evidence(api_client: TestClient):
@@ -107,6 +150,7 @@ def test_rag_returns_503_when_llm_unconfigured(
         generator=UnconfiguredGenerator("No LLM provider is configured."),
         language_detector=query_language_detector,
         prompt_builder=PromptBuilder(),
+        evidence_assessor=FixedEvidenceAssessor(),
     )
     api_client.app.dependency_overrides[get_rag_service] = lambda: service
 
@@ -128,6 +172,7 @@ def test_rag_returns_502_on_provider_error(
         generator=FailingGenerator(),
         language_detector=query_language_detector,
         prompt_builder=PromptBuilder(),
+        evidence_assessor=FixedEvidenceAssessor(),
     )
     api_client.app.dependency_overrides[get_rag_service] = lambda: service
 
@@ -150,6 +195,7 @@ def test_rag_filters_by_document(
         generator=MockGenerator(),
         language_detector=query_language_detector,
         prompt_builder=PromptBuilder(),
+        evidence_assessor=FixedEvidenceAssessor(),
     )
     api_client.app.dependency_overrides[get_rag_service] = lambda: service
 
