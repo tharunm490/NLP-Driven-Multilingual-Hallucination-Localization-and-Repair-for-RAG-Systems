@@ -4,6 +4,7 @@ import {
   MessageSquare,
   Search,
   ShieldCheck,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +49,13 @@ export const NAV_ITEMS: NavItem[] = [
     description:
       "Run a dedicated groundedness check on the latest Ask Documents answer.",
     icon: ShieldCheck,
+  },
+  {
+    href: "/repair",
+    label: "Hallucination Repair",
+    description:
+      "Repair unsupported claims with retrieved evidence and verify every correction.",
+    icon: Wrench,
   },
 ];
 

@@ -11,7 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api import documents, hallucination, health, rag, retrieval, verification
+from app.api import (
+    documents,
+    hallucination,
+    health,
+    rag,
+    repair,
+    retrieval,
+    verification,
+)
 from app.core.config import Settings, get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
@@ -48,10 +56,9 @@ def create_app() -> FastAPI:
         title="Multilingual Hallucination Localization API",
         description=(
             "Phase 1-4A backend: document ingestion, multilingual embeddings, "
-            "vector retrieval, evidence-grounded question answering, and "
-            "claim-level verification against retrieved evidence. "
-            "Hallucination localization, repair, and re-verification are added "
-            "in later phases."
+            "vector retrieval, evidence-grounded question answering, "
+            "claim-level verification against retrieved evidence, and "
+            "iterative hallucination repair with independent re-verification."
         ),
         version=__version__,
         lifespan=lifespan,
@@ -100,6 +107,7 @@ def create_app() -> FastAPI:
     api_router.include_router(rag.router)
     api_router.include_router(verification.router)
     api_router.include_router(hallucination.router)
+    api_router.include_router(repair.router)
     app.include_router(api_router)
 
     @app.get("/", include_in_schema=False)

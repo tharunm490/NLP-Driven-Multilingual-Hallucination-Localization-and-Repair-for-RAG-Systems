@@ -92,9 +92,10 @@ class Settings(BaseSettings):
 
     # Claim-level verification (Phase 4A)
     verification_enabled: bool = True
-    # The extractor is allowed to find more claims than the verifier checks so
-    # that skipped claims can be reported explicitly instead of disappearing.
-    verification_max_extracted_claims: int = Field(default=64, ge=1, le=500)
+    # Claim extraction is deterministic and local. The extractor may find more
+    # claims than the verifier checks, but the hard ceiling is 30 regardless of
+    # this setting.
+    verification_max_extracted_claims: int = Field(default=30, ge=1, le=500)
     verification_max_claims: int = Field(default=20, ge=1, le=200)
     # Safety ceiling only. The default matches the largest retrievable top_k so
     # that every retrieved chunk is compared with every checked claim.
@@ -168,6 +169,17 @@ class Settings(BaseSettings):
         default=120.0, gt=0.0, le=1800.0
     )
     hallucination_cache_size: int = Field(default=32, ge=1, le=500)
+
+    # Evidence-grounded iterative repair. This layer reuses the existing NLI
+    # verifier and Hallucination Guard; it never changes their thresholds.
+    repair_enabled: bool = True
+    repair_max_attempts: Literal[3] = 3
+    repair_max_evidence_per_claim: int = Field(default=3, ge=1, le=20)
+    repair_deadline_seconds: float = Field(default=600.0, gt=0.0, le=3600.0)
+    repair_result_cache_size: int = Field(default=32, ge=1, le=500)
+    repair_result_ttl_seconds: float = Field(
+        default=3600.0, gt=0.0, le=86400.0
+    )
 
     # Generative LLM (Phase 3)
     llm_provider: str = ""

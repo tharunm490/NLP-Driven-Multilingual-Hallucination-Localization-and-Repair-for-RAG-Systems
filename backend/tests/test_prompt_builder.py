@@ -53,6 +53,15 @@ def test_system_prompt_treats_evidence_as_untrusted():
     assert "do not invent" in prompt.lower()
 
 
+def test_system_prompt_prefers_structured_factual_answers():
+    prompt = PromptBuilder().system_prompt.lower()
+    assert "complete factual bullet" in prompt
+    assert "independently verifiable" in prompt
+    assert "summary" in prompt
+    assert "standalone citation-only" in prompt
+    assert "same structure in the user's language" in prompt
+
+
 def test_prompt_version_is_exposed():
     builder = PromptBuilder()
     built = builder.build("q", [make_source()])

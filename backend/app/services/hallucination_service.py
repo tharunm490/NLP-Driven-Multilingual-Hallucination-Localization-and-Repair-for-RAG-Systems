@@ -8,7 +8,11 @@ import uuid
 from collections import OrderedDict
 
 from app.core.config import Settings
-from app.core.errors import HallucinationCheckError, HallucinationModelError
+from app.core.errors import (
+    ClaimExtractionError,
+    HallucinationCheckError,
+    HallucinationModelError,
+)
 from app.schemas.hallucination import (
     HallucinationCheckResponse,
     HallucinationClaimResult,
@@ -18,11 +22,15 @@ from app.schemas.hallucination import (
 )
 from app.schemas.rag import RagQueryResponse, RagSource
 from app.schemas.verification import ClaimVerificationResult, ExtractedClaim
+from app.services.generator import Generator
 from app.services.hallucination_detector import (
     HallucinationDetector,
     HallucinationPrediction,
 )
-from app.services.verification.claims import build_claim_extractor
+from app.services.verification.claims import (
+    ClaimExtractor,
+    build_claim_extractor,
+)
 
 
 class HallucinationCheckService:
@@ -30,14 +38,20 @@ class HallucinationCheckService:
         self,
         settings: Settings,
         detector: HallucinationDetector,
+        claim_extractor: ClaimExtractor | None = None,
     ) -> None:
         self._settings = settings
         self._detector = detector
-        self._extractor = build_claim_extractor(settings)
+        self._extractor = claim_extractor or build_claim_extractor(settings)
         self._cache: OrderedDict[str, HallucinationCheckResponse] = OrderedDict()
         self._cache_lock = threading.Lock()
         self._result_locks: dict[str, threading.Lock] = {}
         self._result_locks_guard = threading.Lock()
+
+    @property
+    def detector(self) -> HallucinationDetector:
+        """The shared detector instance, reused by iterative repair."""
+        return self._detector
 
     def check(
         self,
@@ -75,6 +89,10 @@ class HallucinationCheckService:
         with self._cache_lock:
             self._cache.clear()
 
+    def get_result(self, result_id: str) -> HallucinationCheckResponse | None:
+        """Return the saved check for an Ask result without running inference."""
+        return self._get_cached(result_id)
+
     def _run(
         self,
         result: RagQueryResponse,
@@ -94,15 +112,18 @@ class HallucinationCheckService:
             )
 
         extraction_started = time.perf_counter()
-        extraction = self._extractor.extract(result.answer)
+        try:
+            extraction = self._extractor.extract(result.answer)
+        except ClaimExtractionError as exc:
+            raise HallucinationCheckError(
+                f"Claim extraction failed: {exc}"
+            ) from exc
         extraction_ms = (time.perf_counter() - extraction_started) * 1000
-        claims = list(extraction.claims[: self._settings.hallucination_max_claims])
+        evaluable_claims = [
+            claim for claim in extraction.claims if claim.evaluable
+        ]
+        claims = list(evaluable_claims)
         warnings = list(extraction.warnings)
-        if len(extraction.claims) > len(claims):
-            warnings.append(
-                f"Only the first {len(claims)} claims were checked; the configured "
-                "claim limit was reached."
-            )
         if not claims:
             return HallucinationCheckResponse(
                 check_id=uuid.uuid4().hex,
@@ -191,7 +212,7 @@ class HallucinationCheckService:
                 claim_evidence,
                 key=lambda item: item.support_probability,
             )
-            verdict = self._verdict(best.support_probability)
+            verdict = self._verdict(best.raw_model_label)
             nli = nli_by_id.get(claim.claim_id) or nli_by_text.get(
                 self._claim_key(claim.claim)
             )
@@ -228,9 +249,6 @@ class HallucinationCheckService:
                 item.verdict == "potentially_hallucinated"
                 for item in claim_results
             ),
-            needs_review=sum(
-                item.verdict == "needs_review" for item in claim_results
-            ),
             nli_disagreements=sum(item.nli_disagrees for item in claim_results),
             evidence_total=len(evidence),
             pairs_evaluated=len(predictions),
@@ -256,14 +274,11 @@ class HallucinationCheckService:
             warnings=warnings,
         )
 
-    def _verdict(self, probability: float) -> str:
-        threshold = self._settings.hallucination_support_threshold
-        margin = self._settings.hallucination_review_margin
-        if probability >= threshold + margin:
+    @staticmethod
+    def _verdict(raw_model_label: str) -> str:
+        if raw_model_label.strip().upper() == "SUPPORTED":
             return "supported"
-        if probability <= threshold - margin:
-            return "potentially_hallucinated"
-        return "needs_review"
+        return "potentially_hallucinated"
 
     @staticmethod
     def _evidence_result(
@@ -296,15 +311,10 @@ class HallucinationCheckService:
                 f"The supplied evidence ({location}) scored "
                 f"{probability:.3f} support for this claim."
             )
-        if verdict == "potentially_hallucinated":
-            return (
-                f"The best supplied evidence ({location}) scored only "
-                f"{probability:.3f} support; the claim may not be grounded."
-            )
         return (
-            f"The best supplied evidence ({location}) scored "
-            f"{probability:.3f} support, near the decision boundary. Review it "
-            "against the evidence."
+            f"The best supplied evidence ({location}) scored only "
+            f"{probability:.3f} support; the claim is not supported by the "
+            "supplied evidence."
         )
 
     @staticmethod
@@ -312,7 +322,7 @@ class HallucinationCheckService:
         verdict: str,
         nli_status: str | None,
     ) -> bool:
-        if nli_status is None or verdict == "needs_review":
+        if nli_status is None:
             return False
         if verdict == "supported":
             return nli_status in {"contradicted", "neutral"}
@@ -369,12 +379,17 @@ class HallucinationCheckService:
             return lock
 
 
-def build_hallucination_check_service(settings: Settings) -> HallucinationCheckService:
+def build_hallucination_check_service(
+    settings: Settings,
+    generator: Generator | None = None,
+    detector: object | None = None,
+) -> HallucinationCheckService:
     from app.services.hallucination_detector import build_hallucination_detector
 
     return HallucinationCheckService(
         settings=settings,
         detector=build_hallucination_detector(settings),
+        claim_extractor=build_claim_extractor(settings, generator, detector),
     )
 
 

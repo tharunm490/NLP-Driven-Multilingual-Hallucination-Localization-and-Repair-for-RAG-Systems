@@ -19,7 +19,7 @@ This document deliberately does **not** describe the user interface, screens, co
 | **Phase 1** | Foundation / project setup | FastAPI application skeleton, typed settings, structured logging + request logging, centralised error types and HTTP exception mapping, CORS, health endpoint, SQLite registry bootstrap, deterministic test harness. |
 | **Phase 2** | Document ingestion + vector storage | PDF/TXT validation, text extraction, conservative cleaning, sentence-aware overlapping chunking, multilingual embeddings, persistent ChromaDB storage with metadata, document registry, retrieval-only search endpoint, delete flow, and full test coverage. |
 | **Phase 3** | Retrieval-augmented question answering | Query language detection, conservative query preprocessing, query embedding with the ingestion model, ChromaDB top-K retrieval, an evidence policy, a versioned evidence-grounded system prompt, an OpenAI-compatible generative LLM client, and the `/api/rag/query` endpoint returning an answer plus real source metadata and timings. |
-| **Phase 4A** | Pretrained claim-level verification | Answer language detection, Unicode-safe text preparation and sentence segmentation, deterministic factual claim extraction, multilingual NER, semantic claim/evidence matching, multilingual NLI with actual label mapping, per-claim/answer verification statuses, `/api/verification/check`, and isolated integration with the RAG response. |
+| **Phase 4A** | Pretrained claim-level verification | Answer language detection, Unicode-safe text preparation and sentence segmentation, deterministic local factual claim extraction, multilingual NER, semantic claim/evidence matching, multilingual NLI with actual label mapping, per-claim/answer verification statuses, `/api/verification/check`, and isolated integration with the RAG response. |
 
 ---
 
@@ -191,7 +191,7 @@ Auxiliary generators:
 | 7 | Query language | Lingua (31 languages) → langdetect fallback | 2.2.0 / 1.0.9 | ISO code + confidence + reliability |
 | 8 | Answer generation | OpenAI-compatible LLM, default Groq `openai/gpt-oss-120b` | httpx 0.28.1 | Grounded answer text |
 | 9 | Answer language | Lingua → langdetect fallback | 2.2.0 / 1.0.9 | ISO code + confidence |
-| 10 | Claim extraction | Deterministic local heuristics | Python | Verbatim claims + offsets |
+| 10 | Claim extraction | Deterministic local rules (English + Hindi) | Python | Verbatim claims + offsets |
 | 11 | Named entities | `Davlan/xlm-roberta-base-wikiann-ner` | transformers 5.20.1 | Entity text/label/offset |
 | 12 | Claim/evidence matching | `BAAI/bge-m3` cosine + lexical fallback | sentence-transformers 5.7.0 | Ranked evidence |
 | 13 | Claim/evidence NLI | `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` | transformers 5.20.1 | Label + class probabilities |
@@ -425,15 +425,18 @@ Implemented in `backend/app/services/verification/` and exposed through
 2. **Text preparation** — NFKC canonicalization with source offset maps,
    multilingual sentence splitting (including Devanagari danda), and
    Unicode-safe word spans.
-3. **Claim extraction** — deterministic local heuristics select factual
-   sentences, exclude headings, metadata, questions, and introductory text, and
-   split clearly independent clauses. Markdown prefixes and trailing
-   `[Source N]` citations are removed while source offsets are preserved.
-   Numbered/bullet/nested items are reconstructed from headings, lead-ins, and
-   parent items; short list labels are separated from complete proposition bodies
-   (for example `Risk treatment – The organization...`). Original claim text,
-   reconstructed hypothesis, and context are retained. Extraction never calls the
-   answer-generation LLM.
+3. **Claim extraction** — deterministic local rules select factual sentences,
+   exclude headings, metadata, questions, and introductory text, and split
+   clearly independent clauses. Markdown and blockquote prefixes and trailing `[Source N]` citations are removed
+   while source offsets are preserved. Numbered/bullet/nested items are
+   reconstructed from headings, lead-ins, and parent items; short list labels are
+   separated from complete proposition bodies (for example
+   `Risk treatment – The organization...`). Original claim text, reconstructed
+   hypothesis, and context are retained. Dependent items under one intro are
+   grouped into a single source-span claim, predominantly Devanagari answers
+   use conservative Hindi predicate rules, and extraction never calls an LLM or
+   downloads a claim-extraction model. Extraction is hard-capped at 30 claims
+   and deduplicated by normalized containment.
 4. **NER** — `Davlan/xlm-roberta-base-wikiann-ner` produces entity text, label,
    score, and offsets. NER failure is non-fatal.
 5. **Evidence matching** — claim/evidence candidates are ranked with the
@@ -659,7 +662,7 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Latest result: **251 passed, 9 skipped** (~21 s). The 9 skips are the opt-in real-embedding,
+Latest result: **329 passed, 12 skipped** (~32 s). The 12 skips are the opt-in real-embedding,
 real-verification, and hosted-endpoint integration tests.
 
 Test design: the unit/API suite **never downloads a model**. `tests/conftest.py` injects a deterministic fake
@@ -688,7 +691,7 @@ Coverage by area (unit/API modules in `tests/`, plus the opt-in integration modu
 | Generator error mapping (mocked HTTP) | `test_generator.py` |
 | RAG evidence policy + full flow (mocked LLM) | `test_rag_service.py` |
 | Verification text preparation | `test_verification_text.py` |
-| Local claim extraction, headings, and compound splitting | `test_verification_claims.py` |
+| Local claim extraction, headings, grouping, dedupe, Hindi rules | `test_verification_claims.py`, `test_language_claim_extraction.py` |
 | NLI windowing, labels, batching | `test_verification_nli.py` |
 | ONNX NLI label mapping, inputs, settings | `test_verification_nli_onnx.py` |
 | Bounded verification request queue | `test_request_limiter.py` |
@@ -800,9 +803,10 @@ an unrelated question. Example output: `SMOKE_TEST_OK`.
   subject to provider quotas, rate limits, availability, logging, and retention. There is no automatic local
   fallback; batch support must be verified against the deployed endpoint; and hosted latency has not yet been
   measured end-to-end. Failed runs preserve timings only for stages that completed.
-- **Claim extraction is local and deterministic.** It filters obvious headings,
-  metadata, and introductory text, but can still miss or merge claims in long or
-  ambiguous sentences.
+- **Claim extraction is deterministic local heuristics.** It never calls an LLM
+  or downloads a claim-extraction model. It filters obvious headings, metadata,
+  introductory text, and meta-commentary, but can still miss or merge claims in
+  long or ambiguous sentences.
 - **Hindi/Devanagari requests must be sent as UTF-8.** PowerShell 5.1 `Invoke-RestMethod` can mangle
   Devanagari and cause false `no_letters` language detection; use an HTTP client that sends UTF-8 JSON.
 - Only `.pdf` and `.txt` are supported; there is no authentication/authorisation layer.
@@ -839,7 +843,9 @@ backend/
 │   ├── services/
 │   │   ├── verification/            Phase 4A verification pipeline
 │   │   │   ├── text.py              offset-preserving normalization/segmentation
-│   │   │   ├── claims.py            local heuristic claim extraction
+│   │   │   ├── claims.py            extractor factory + local heuristics
+│   │   │   ├── claim_common.py      shared claim helpers + 30-claim cap
+│   │   │   ├── hindi_claims.py      deterministic Hindi claim rules
 │   │   │   ├── ner.py               multilingual NER
 │   │   │   ├── matching.py          claim/evidence ranking
 │   │   │   ├── nli.py               multilingual NLI + windowing

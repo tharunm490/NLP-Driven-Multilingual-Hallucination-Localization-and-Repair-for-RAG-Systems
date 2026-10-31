@@ -90,6 +90,14 @@ class RagResultNotFoundError(AppError):
     """A previously completed Ask result is no longer available."""
 
 
+class RepairError(AppError):
+    """Evidence-grounded repair could not start or complete."""
+
+
+class RepairResponseError(RepairError):
+    """The repair model returned a response that failed validation."""
+
+
 class NerError(VerificationError):
     """The named-entity recognizer failed."""
 
@@ -115,6 +123,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _hallucination_check(
         _: Request, exc: HallucinationCheckError
     ) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": exc.message})
+
+    @app.exception_handler(RepairError)
+    async def _repair(_: Request, exc: RepairError) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": exc.message})
 
     @app.exception_handler(DocumentValidationError)

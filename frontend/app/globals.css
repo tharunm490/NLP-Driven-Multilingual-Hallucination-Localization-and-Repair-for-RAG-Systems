@@ -1465,11 +1465,6 @@ textarea {
   border-bottom-color: var(--error);
 }
 
-.hallucination-mark-needs_review {
-  background: var(--warning-soft);
-  border-bottom-color: var(--warning);
-}
-
 .hallucination-mark-selected {
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
@@ -1492,6 +1487,29 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+.hallucination-verdict-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 0.82rem;
+}
+
+.hallucination-verdict-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.hallucination-verdict-legend-item .mono {
+  color: var(--text-secondary);
 }
 
 .claim-text-button {

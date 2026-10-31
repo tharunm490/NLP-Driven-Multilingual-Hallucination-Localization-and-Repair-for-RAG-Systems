@@ -175,8 +175,6 @@ export function hallucinationVerdictLabel(
       return "Supported";
     case "potentially_hallucinated":
       return "Potentially hallucinated";
-    case "needs_review":
-      return "Needs review";
     default:
       return "Not checked";
   }
@@ -190,8 +188,6 @@ export function hallucinationVerdictTone(
       return "success";
     case "potentially_hallucinated":
       return "error";
-    case "needs_review":
-      return "warning";
     default:
       return "neutral";
   }

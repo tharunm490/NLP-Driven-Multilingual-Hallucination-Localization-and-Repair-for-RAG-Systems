@@ -4,36 +4,48 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol, runtime_checkable
 
 from app.core.config import Settings
-from app.schemas.verification import DetectedLanguage, ExtractedClaim
+from app.schemas.verification import DetectedLanguage, ExtractedClaim, TextSpan
+from app.services.verification.claim_common import MAX_CLAIMS
 from app.services.verification.text import split_sentences
 
+_BLOCKQUOTE_PREFIX = r"(?:[ \t]*>[ \t]?)*"
+_BARE_BLOCKQUOTE_PREFIX = re.compile(r"^\s*(?:>\s?)+")
 _LEADING_PREFIX = re.compile(
-    r"^\s*(?:#{1,6}\s+|[-*+•▪◦‣]\s+|\d{1,3}(?:\.\d{1,3})*[.)]\s+|[ivxlcdm]{1,5}[.)]\s+)",
+    rf"^\s*{_BLOCKQUOTE_PREFIX}(?:#{{1,6}}\s+|[-*+•▪◦‣]\s+|"
+    r"\d{1,3}(?:\.\d{1,3})*[.)]\s+|[ivxlcdm]{1,5}[.)]\s+)",
     re.IGNORECASE,
 )
 _LIST_PREFIX = re.compile(
-    r"^\s*(?:[-*+•▪◦‣]\s+|\d{1,3}(?:\.\d{1,3})*[.)]\s+|[ivxlcdm]{1,5}[.)]\s+)",
+    rf"^\s*{_BLOCKQUOTE_PREFIX}(?:[-*+•▪◦‣]\s+|"
+    r"\d{1,3}(?:\.\d{1,3})*[.)]\s+|[ivxlcdm]{1,5}[.)]\s+)",
     re.IGNORECASE,
 )
 _LIST_MARKER_ONLY = re.compile(
-    r"^\s*(?:\d{1,3}(?:\.\d{1,3})*[.)]|[ivxlcdm]{1,5}[.)])\s*$",
+    rf"^\s*{_BLOCKQUOTE_PREFIX}(?:\d{{1,3}}(?:\.\d{{1,3}})*[.)]|"
+    r"[ivxlcdm]{1,5}[.)])\s*$",
     re.IGNORECASE,
 )
 _MARKDOWN_HEADING = re.compile(
-    r"^\s{0,3}(?P<hashes>#{1,6})(?:\s+(?P<body>.*?)\s*#*\s*)?$"
+    rf"^\s{{0,3}}{_BLOCKQUOTE_PREFIX}(?P<hashes>#{{1,6}})"
+    r"(?:\s+(?P<body>.*?)\s*#*\s*)?$"
 )
 _BOLD_HEADING = re.compile(
-    r"^\s*(?:\*\*|__)(?P<body>[^*_].+?[^.!?。！？])(?:\*\*|__)\s*:?\s*$"
+    rf"^\s*{_BLOCKQUOTE_PREFIX}(?:\*\*|__)"
+    r"(?P<body>[^*_].+?[^.!?。！？])(?:\*\*|__)\s*:?\s*$"
 )
 _STRUCTURED_LIST_ITEM = re.compile(
-    r"^(?P<indent>[ \t]*)"
+    rf"^{_BLOCKQUOTE_PREFIX}(?P<indent>[ \t]*)"
     r"(?P<marker>[-*+•▪◦‣]|\d{1,3}(?:\.\d{1,3})*[.)]|"
     r"[ivxlcdm]{1,5}[.)])"
     r"[ \t]+(?P<body>.+)$",
+    re.IGNORECASE,
+)
+_INLINE_LIST_MARKER = re.compile(
+    r"[ \t]+(?:[•▪◦‣])[ \t]+",
     re.IGNORECASE,
 )
 _LIST_LABEL_SEPARATOR = re.compile(
@@ -52,9 +64,31 @@ _META_PREFIX = re.compile(
     r"^\s*(?:sources?|references?|citations?|bibliography|figure|table)\s*:",
     re.IGNORECASE,
 )
+_CITATION_TOKEN = (
+    r"(?:\(\s*(?:source|evidence)s?\s*\d+[^)]*\)"
+    r"|\[\s*(?:source|evidence)s?\s*\d+[^\]]*\])"
+)
+_CITATION = re.compile(_CITATION_TOKEN, re.IGNORECASE)
+_CITATION_ONLY = re.compile(
+    rf"^\s*(?:{_CITATION_TOKEN}\s*)+[.!?]?\s*$", re.IGNORECASE
+)
 _TRAILING_CITATION = re.compile(
-    r"(?:[\s,;]*\[(?:source|evidence)s?\s*\d+(?:\s*,\s*\d+)*\])+"
-    r"(?:\s*[.!?。！？।॥])?\s*$",
+    rf"(?:[\s,;]*{_CITATION_TOKEN})+[\s,;.!?]*$", re.IGNORECASE
+)
+_SUMMARY_HEADING = re.compile(
+    r"^(?:executive\s+)?summary(?:\s+of\s+.+)?\s*:?\s*$",
+    re.IGNORECASE,
+)
+_SUMMARY_DISCOURSE = re.compile(
+    r"^\s*(?:in\s+summary|in\s+conclusion|overall)\b", re.IGNORECASE
+)
+_KNOWN_SECTION_LABEL = re.compile(
+    r"^(?:risk\s+(?:criteria|owners?|analysis|evaluation)|documentation|"
+    r"summary\s+of\s+the\s+process)\s*:?\s*$",
+    re.IGNORECASE,
+)
+_ENUMERATIVE_TAIL = re.compile(
+    r"\s+(?:that|which)\s+(?:includes?|comprises?|consists?\s+of)\s*$",
     re.IGNORECASE,
 )
 _EMPHASIS_EDGE = re.compile(r"^\s*(?:[*_`]{1,3})\s*|\s*(?:[*_`]{1,3})\s*$")
@@ -72,7 +106,7 @@ _TITLE_LEAD = re.compile(
 )
 _TRAILING_LEAD_IN = re.compile(
     r"\b(?:is|are|was|were|includes?|comprises?|consists?\s+of|involves?|"
-    r"covers?)\s*$",
+    r"covers?|consider(?:s)?)\s*$",
     re.IGNORECASE,
 )
 _INTRO_PATTERNS = (
@@ -100,6 +134,47 @@ _INTRO_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(r"^(?:let us|let's)\b", re.IGNORECASE),
+)
+_META_COMMENTARY = (
+    re.compile(
+        r"^(?:the\s+|these\s+|those\s+)?"
+        r"(?:provided|uploaded|supplied|available|retrieved|given|"
+        r"attached|selected)\s+"
+        r"(?:evidence|documents?|sources?|context|text|passages?|chunks?|"
+        r"files?|materials?|excerpts?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:the\s+)?(?:evidence|documents?|sources?|context|text|"
+        r"passages?|chunks?|files?|materials?|excerpts?)\s+"
+        r"(?:does|do|did)\s+not\s+"
+        r"(?:provide|contain|mention|include|specify|state|describe|"
+        r"cover|address|support|establish|confirm|show|list)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:this|it|the\s+answer|the\s+response)\s+"
+        r"(?:only|merely|simply)\s+"
+        r"(?:outlines?|describes?|lists?|summari[sz]es?|mentions?|"
+        r"repeats?|restates?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:i|we)\s+(?:cannot|can't|can\s+not|am\s+unable|"
+        r"are\s+unable|do\s+not\s+have|don't\s+have)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:no|not\s+enough|insufficient)\s+"
+        r"(?:information|evidence|details?|context|data)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:unfortunately|however|note\s+that)\s*,?\s*"
+        r"(?:the\s+)?(?:provided|uploaded|supplied|available|retrieved)\s+"
+        r"(?:evidence|documents?|sources?|context|text|passages?|chunks?)\b",
+        re.IGNORECASE,
+    ),
 )
 _CLAUSE_SEPARATOR = re.compile(
     r"\s*;\s*|\s*,\s*(?:and|but|yet|whereas)\s+|\s+(?:and|but|yet|whereas)\s+",
@@ -231,6 +306,14 @@ _AUXILIARIES = frozenset(
         "would",
     }
 )
+_MODAL_AUXILIARIES = frozenset(
+    {"can", "could", "may", "might", "must", "shall", "should", "will", "would"}
+)
+_LEAD_IN_STARTERS = re.compile(
+    r"^(?:for|to|in|on|at|by|with|without|during|after|before|when|if|"
+    r"where|while|through|as)\b",
+    re.IGNORECASE,
+)
 _IRREGULAR_VERBS = frozenset(
     {
         "became",
@@ -281,7 +364,7 @@ _VERB_BASES = frozenset(
     prohibit promote protect provide publish receive recommend record reduce refer
     regulate relate rely remain replace report require respond retain review run
     safeguard say seek set specify state store suggest support supersede take target
-    track train treat undergo use validate verify work
+    tolerate track train treat undergo use validate verify work
     """.split()
 )
 _ENGLISH_FUNCTION_WORDS = frozenset(
@@ -292,6 +375,28 @@ _ENGLISH_FUNCTION_WORDS = frozenset(
     which who will with would you your
     """.split()
 )
+_SUMMARY_STOPWORDS = frozenset(
+    """
+    a an and are as at be been being been but by can could did do does for from
+    had has have he her his how if in into is it its may might must not of on or
+    our shall should that the their them there these they this those to was we
+    were what when where which who will with would you your also such
+    """.split()
+)
+
+
+@dataclass(frozen=True)
+class SkippedClaim:
+    text: str
+    start: int
+    end: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class UnresolvedClaim:
+    text: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -299,6 +404,8 @@ class ClaimExtractionResult:
     claims: tuple[ExtractedClaim, ...]
     method: str
     warnings: tuple[str, ...] = ()
+    skipped: tuple[SkippedClaim, ...] = ()
+    unresolved: tuple[UnresolvedClaim, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -313,6 +420,7 @@ class _SentenceCandidate:
     list_indent: int = 0
     list_item_start: int = -1
     subject_hint: str | None = None
+    is_grouped: bool = False
 
 
 @dataclass(frozen=True)
@@ -335,13 +443,16 @@ class ClaimExtractor(Protocol):
 class HeuristicClaimExtractor:
     method = "heuristic"
 
-    def __init__(self, max_claims: int = 20) -> None:
-        self._max_claims = max(1, max_claims)
+    def __init__(self, max_claims: int = MAX_CLAIMS) -> None:
+        self._max_claims = max(1, min(max_claims, MAX_CLAIMS))
 
     def extract(self, answer: str) -> ClaimExtractionResult:
+        if _is_devanagari_answer(answer):
+            return self._extract_hindi(answer)
         claims: list[ExtractedClaim] = []
         warnings: list[str] = []
-        seen: set[str] = set()
+        skipped_fragments: list[SkippedClaim] = []
+        seen: list[tuple[str, int]] = []
         limit_reached = False
         pending_lead_in: str | None = None
         current_heading: str | None = None
@@ -349,24 +460,185 @@ class HeuristicClaimExtractor:
         list_contexts: list[tuple[int, str]] = []
         last_claim_sentence_index: int | None = None
         last_list_item_start = -1
-        for sentence in _sentences(answer):
+        in_summary_section = False
+        summary_heading_level = 0
+        for sentence in _group_nested_lists(answer, _sentences(answer)):
+            summary_candidate = in_summary_section or bool(
+                _SUMMARY_DISCOURSE.match(sentence.text)
+            )
+            if sentence.is_grouped:
+                hypothesis = _grouped_hypothesis(answer, sentence)
+                key = _claim_key(hypothesis)
+                if not key:
+                    continue
+                if summary_candidate and _is_redundant_summary(
+                    hypothesis, claims
+                ):
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=answer[sentence.start : sentence.end],
+                            start=sentence.start,
+                            end=sentence.end,
+                            reason=(
+                                "The candidate repeats an assertion already "
+                                "made in the main body."
+                            ),
+                        )
+                    )
+                    continue
+                if len(claims) >= self._max_claims and not _can_supersede(
+                    key, seen
+                ):
+                    warnings.append(
+                        f"Claim extraction stopped at the configured limit of "
+                        f"{self._max_claims} claims."
+                    )
+                    limit_reached = True
+                    break
+                claim = _make_claim(
+                    claim_id=f"c{len(claims) + 1}",
+                    sentence=sentence,
+                    claim_text=answer[sentence.start : sentence.end],
+                    hypothesis=hypothesis,
+                    context=None,
+                    evaluable=True,
+                    incomplete_reason=None,
+                    claim_start=sentence.start,
+                    claim_end=sentence.end,
+                    method=self.method,
+                )
+                _register_claim(claims, seen, claim, key)
+                last_claim_sentence_index = sentence.index
+                pending_lead_in = None
+                list_contexts.clear()
+                last_list_item_start = -1
+                if limit_reached:
+                    break
+                continue
             cleaned = _clean_sentence(sentence)
             if cleaned is None:
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=sentence.text.strip(),
+                        start=sentence.start,
+                        end=sentence.end,
+                        reason="The line contains metadata rather than a factual claim.",
+                    )
+                )
+                continue
+            if _is_meta_commentary(cleaned.text):
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=cleaned.text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=(
+                            "The text comments on the available evidence "
+                            "rather than asserting a factual claim."
+                        ),
+                    )
+                )
+                pending_lead_in = None
+                continue
+            assertive = _assertive_span(cleaned)
+            if assertive is not None:
+                cleaned = assertive
+            if cleaned.is_heading and _is_lead_in(cleaned.text):
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=cleaned.text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=(
+                            "An introductory lead-in does not assert a "
+                            "standalone factual proposition."
+                        ),
+                    )
+                )
+                pending_lead_in = cleaned.text.rstrip(":：").strip()
+                current_heading = pending_lead_in
+                _push_list_context(list_contexts, -1, pending_lead_in)
+                if cleaned.is_list_item:
+                    _push_list_context(
+                        list_contexts, cleaned.list_indent, cleaned.text
+                    )
+                    last_list_item_start = cleaned.list_item_start
                 continue
             if cleaned.is_heading:
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=cleaned.text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=(
+                            "A heading or section label does not assert a "
+                            "factual proposition."
+                        ),
+                    )
+                )
                 current_heading = cleaned.text or None
                 current_heading_level = cleaned.heading_level
+                if _is_summary_heading(cleaned.text):
+                    in_summary_section = True
+                    summary_heading_level = cleaned.heading_level
+                elif in_summary_section and (
+                    cleaned.heading_level == 0
+                    or cleaned.heading_level <= summary_heading_level
+                ):
+                    in_summary_section = False
                 pending_lead_in = None
                 list_contexts.clear()
                 continue
-            if _is_lead_in(cleaned.text):
+            complete_list_assertion = (
+                cleaned.is_list_item
+                and _has_finite_verb(cleaned.text)
+                and (
+                    _has_terminal_punctuation(cleaned.text)
+                    or _has_terminal_punctuation(sentence.text)
+                )
+            )
+            if _is_lead_in(cleaned.text) and not complete_list_assertion:
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=cleaned.text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=(
+                            "An introductory lead-in does not assert a "
+                            "standalone factual proposition."
+                        ),
+                    )
+                )
                 pending_lead_in = cleaned.text.rstrip(":：").strip()
+                current_heading = pending_lead_in
+                _push_list_context(list_contexts, -1, pending_lead_in)
+                if cleaned.is_list_item:
+                    _push_list_context(
+                        list_contexts, cleaned.list_indent, cleaned.text
+                    )
+                    last_list_item_start = cleaned.list_item_start
                 continue
-            if not cleaned.is_list_item and _is_heading_like(
+            if not complete_list_assertion and not cleaned.is_list_item and _is_heading_like(
                 cleaned.text, cleaned.text
             ):
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=cleaned.text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=(
+                            "A heading or section label does not assert a "
+                            "factual proposition."
+                        ),
+                    )
+                )
                 current_heading = cleaned.text
                 current_heading_level = 0
+                if _is_summary_heading(cleaned.text):
+                    in_summary_section = True
+                    summary_heading_level = 0
+                elif in_summary_section:
+                    in_summary_section = False
                 pending_lead_in = None
                 list_contexts.clear()
                 continue
@@ -393,18 +665,52 @@ class HeuristicClaimExtractor:
                 if label_body is not None:
                     item_label, semantic_text = label_body
             reconstructable = cleaned.is_list_item and (
+                (
+                    semantic_text.rstrip().endswith((".", "!", "?"))
+                    and _has_finite_verb(semantic_text)
+                )
+                or
                 _can_reconstruct(
                     semantic_text,
                     lead_in=pending_lead_in,
                     heading=current_heading,
                     parent=parent,
+                    subject_hint=sentence.subject_hint,
                 )
                 or (
                     item_label is not None
-                    and _has_independent_subject(semantic_text)
+                    and (
+                        _has_independent_subject(semantic_text)
+                        or _is_noun_phrase(semantic_text)
+                        or _is_dependent_nominal_clause(semantic_text)
+                    )
+                )
+                or (
+                    (
+                        parent
+                        or cleaned.list_indent > 0
+                        or (
+                            pending_lead_in is not None
+                            and _lead_in_supports_noun_phrase(
+                                semantic_text, pending_lead_in
+                            )
+                        )
+                    )
+                    and (
+                        _is_noun_phrase(semantic_text)
+                        or _starts_with_verb(semantic_text)
+                    )
                 )
             )
             if not _looks_factual(semantic_text) and not reconstructable:
+                skipped_fragments.append(
+                    SkippedClaim(
+                        text=semantic_text,
+                        start=cleaned.start,
+                        end=cleaned.end,
+                        reason=_non_claim_reason(semantic_text),
+                    )
+                )
                 if not cleaned.is_list_item:
                     pending_lead_in = None
                 else:
@@ -448,13 +754,53 @@ class HeuristicClaimExtractor:
                 is_list_item=cleaned.is_list_item,
                 list_indent=cleaned.list_indent,
                 list_item_start=cleaned.list_item_start,
+                subject_hint=sentence.subject_hint,
             )
             lead_in = pending_lead_in if cleaned.is_list_item else None
             heading = current_heading if cleaned.is_list_item else None
             item_claims: list[ExtractedClaim] = []
-            fragments = [span] if item_label is not None else _split_compound(span)
+            fragments = [span]
+            if item_label is not None:
+                if (
+                    not _looks_factual(cleaned.text)
+                    or (
+                        len(_split_compound(span)) > 1
+                        and any(
+                            _starts_with_anaphoric_subject(fragment.text)
+                            for fragment in _split_compound(span)[1:]
+                        )
+                    )
+                ):
+                    split_fragments = _split_compound(span)
+                    if len(split_fragments) > 1 and all(
+                        _has_explicit_subject(fragment.text)
+                        for fragment in split_fragments
+                    ) and not any(
+                        _starts_with_anaphoric_subject(fragment.text)
+                        for fragment in split_fragments[1:]
+                    ):
+                        fragments = split_fragments
+                        item_label = None
+            else:
+                if cleaned.is_list_item:
+                    if not _looks_factual(cleaned.text):
+                        split_fragments = _split_compound(span)
+                        if len(split_fragments) > 1 and all(
+                            _has_explicit_subject(fragment.text)
+                            for fragment in split_fragments
+                        ) and not any(
+                            _starts_with_anaphoric_subject(fragment.text)
+                            for fragment in split_fragments[1:]
+                        ):
+                            fragments = split_fragments
+                else:
+                    fragments = _split_compound(span)
             for fragment in fragments:
-                if not _looks_factual(fragment.text) and not (
+                factual_fragment = _looks_factual(fragment.text) or (
+                    complete_list_assertion
+                    and _has_finite_verb(fragment.text)
+                )
+                if not factual_fragment and not (
                     (reconstructable or fragment.subject_hint)
                     and (
                         _can_reconstruct(
@@ -469,7 +815,41 @@ class HeuristicClaimExtractor:
                             and _has_independent_subject(fragment.text)
                         )
                     )
+                    or (
+                        cleaned.is_list_item
+                        and complete_list_assertion
+                    )
+                    or (
+                        cleaned.is_list_item
+                        and fragment.text.rstrip().endswith((".", "!", "?"))
+                        and _has_finite_verb(fragment.text)
+                    )
+                    or (
+                        cleaned.is_list_item
+                        and (
+                            _is_noun_phrase(fragment.text)
+                            or _starts_with_verb(fragment.text)
+                        )
+                        and (
+                            not _is_heading_like(fragment.text, fragment.text)
+                            or cleaned.list_indent > 0
+                            or (
+                                lead_in is not None
+                                and _lead_in_supports_noun_phrase(
+                                    fragment.text, lead_in
+                                )
+                            )
+                        )
+                    )
                 ):
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=fragment.text,
+                            start=fragment.start,
+                            end=fragment.end,
+                            reason=_non_claim_reason(fragment.text),
+                        )
+                    )
                     continue
                 hypothesis, context, evaluable, incomplete_reason = (
                     _claim_context(
@@ -480,6 +860,36 @@ class HeuristicClaimExtractor:
                         subject_hint=fragment.subject_hint,
                     )
                 )
+                if (
+                    not evaluable
+                    and cleaned.is_list_item
+                    and (
+                        complete_list_assertion
+                        or
+                        _is_noun_phrase(fragment.text)
+                        or _starts_with_verb(fragment.text)
+                    )
+                    and (
+                        not _is_heading_like(fragment.text, fragment.text)
+                        or cleaned.list_indent > 0
+                        or (
+                            lead_in is not None
+                            and _lead_in_supports_noun_phrase(
+                                fragment.text, lead_in
+                            )
+                        )
+                    )
+                ):
+                    hypothesis = fragment.text
+                    context = parent or lead_in or current_heading
+                    evaluable = True
+                    incomplete_reason = None
+                if (
+                    cleaned.is_list_item
+                    and context is None
+                    and (parent or lead_in or current_heading)
+                ):
+                    context = parent or lead_in or current_heading
                 if item_label is not None:
                     hypothesis, context, evaluable, incomplete_reason = (
                         _label_body_claim(
@@ -490,17 +900,65 @@ class HeuristicClaimExtractor:
                             parent=parent,
                         )
                     )
-                key = _claim_key(hypothesis)
-                if not key or key in seen:
+                if (
+                    not evaluable
+                    and not _starts_with_anaphoric_subject(fragment.text)
+                ):
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=fragment.text,
+                            start=fragment.start,
+                            end=fragment.end,
+                            reason=incomplete_reason
+                            or _non_claim_reason(fragment.text),
+                        )
+                    )
                     continue
-                if len(claims) >= self._max_claims:
+                key = _claim_key(hypothesis)
+                if not key:
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=fragment.text,
+                            start=fragment.start,
+                            end=fragment.end,
+                            reason="The candidate contained no claim text.",
+                        )
+                    )
+                    continue
+                if summary_candidate and _is_redundant_summary(
+                    hypothesis, claims
+                ):
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=fragment.text,
+                            start=fragment.start,
+                            end=fragment.end,
+                            reason=(
+                                "The candidate repeats an assertion already "
+                                "made in the main body."
+                            ),
+                        )
+                    )
+                    continue
+                if _is_redundant(key, seen):
+                    skipped_fragments.append(
+                        SkippedClaim(
+                            text=fragment.text,
+                            start=fragment.start,
+                            end=fragment.end,
+                            reason="The candidate duplicates an earlier claim.",
+                        )
+                    )
+                    continue
+                if len(claims) >= self._max_claims and not _can_supersede(
+                    key, seen
+                ):
                     warnings.append(
                         f"Claim extraction stopped at the configured limit of "
                         f"{self._max_claims} claims."
                     )
                     limit_reached = True
                     break
-                seen.add(key)
                 claim = _make_claim(
                     claim_id=f"c{len(claims) + 1}",
                     sentence=sentence,
@@ -519,7 +977,7 @@ class HeuristicClaimExtractor:
                     ),
                     method=self.method,
                 )
-                claims.append(claim)
+                _register_claim(claims, seen, claim, key)
                 item_claims.append(claim)
                 last_claim_sentence_index = sentence.index
             if cleaned.is_list_item:
@@ -543,7 +1001,30 @@ class HeuristicClaimExtractor:
             if limit_reached:
                 break
         return ClaimExtractionResult(
-            claims=tuple(claims), method=self.method, warnings=tuple(warnings)
+            claims=tuple(claims),
+            method=self.method,
+            warnings=tuple(warnings),
+            skipped=tuple(skipped_fragments),
+        )
+
+    def _extract_hindi(self, answer: str) -> ClaimExtractionResult:
+        from app.services.verification.hindi_claims import (
+            HindiClaimExtractor,
+        )
+
+        result = HindiClaimExtractor(max_claims=self._max_claims).extract(
+            answer
+        )
+        claims = tuple(
+            claim.model_copy(update={"extraction_method": self.method})
+            for claim in result.claims
+        )
+        return ClaimExtractionResult(
+            claims=claims,
+            method=self.method,
+            warnings=result.warnings,
+            skipped=result.skipped,
+            unresolved=result.unresolved,
         )
 
 
@@ -551,6 +1032,331 @@ def _claim_key(text: str) -> str:
     value = _normalize_markdown(_strip_emphasis_edges(text))
     value = " ".join(value.split()).casefold()
     return _without_closers(value).rstrip("".join(_TERMINAL_PUNCTUATION)).strip()
+
+
+def _strip_citations(text: str) -> str:
+    value = _CITATION.sub(" ", text)
+    value = re.sub(r"\s+([,.;:!?])", r"\1", value)
+    return re.sub(r"\s{2,}", " ", value).strip()
+
+
+def _summary_content_tokens(text: str) -> set[str]:
+    tokens: set[str] = set()
+    for word in _word_tokens(_strip_citations(text).casefold()):
+        if word in _SUMMARY_STOPWORDS or len(word) < 3:
+            continue
+        tokens.add(word[:6])
+    return tokens
+
+
+def _is_summary_heading(text: str) -> bool:
+    value = text.strip()
+    if len(_word_tokens(value)) > 8:
+        return False
+    return _SUMMARY_HEADING.match(value) is not None
+
+
+def _is_redundant_summary(
+    text: str, claims: list[ExtractedClaim]
+) -> bool:
+    candidate = _summary_content_tokens(text)
+    if len(candidate) < 3:
+        return False
+    for claim in claims:
+        prior = _summary_content_tokens(
+            claim.hypothesis or claim.claim
+        )
+        if not prior:
+            continue
+        overlap = len(candidate & prior)
+        if overlap / len(candidate) >= 0.8:
+            return True
+        if overlap / len(prior) >= 0.8 and overlap / len(candidate) >= 0.6:
+            return True
+    return False
+
+
+def _is_devanagari_answer(text: str) -> bool:
+    letters = [character for character in text if character.isalpha()]
+    if not letters:
+        return False
+    devanagari = sum(
+        1
+        for character in letters
+        if "DEVANAGARI" in unicodedata.name(character, "")
+    )
+    return devanagari / len(letters) >= 0.5
+
+
+def _is_meta_commentary(text: str) -> bool:
+    value = _strip_emphasis_edges(text).strip()
+    return bool(value) and any(
+        pattern.match(value) for pattern in _META_COMMENTARY
+    )
+
+
+def _key_contains(longer: str, shorter: str) -> bool:
+    if len(shorter.split()) < 3:
+        return False
+    return f" {shorter} " in f" {longer} "
+
+
+def _is_redundant(key: str, seen: list[tuple[str, int]]) -> bool:
+    for old_key, _claim_index in seen:
+        if key == old_key or _key_contains(old_key, key):
+            return True
+    return False
+
+
+def _can_supersede(key: str, seen: list[tuple[str, int]]) -> bool:
+    return any(
+        key != old_key and _key_contains(key, old_key)
+        for old_key, _claim_index in seen
+    )
+
+
+def _register_claim(
+    claims: list[ExtractedClaim],
+    seen: list[tuple[str, int]],
+    claim: ExtractedClaim,
+    key: str,
+) -> None:
+    for index, (old_key, claim_index) in enumerate(seen):
+        if key == old_key or _key_contains(old_key, key):
+            return
+        if _key_contains(key, old_key):
+            existing = claims[claim_index]
+            claims[claim_index] = claim.model_copy(
+                update={"claim_id": existing.claim_id}
+            )
+            seen[index] = (key, claim_index)
+            return
+    claims.append(claim)
+    seen.append((key, len(claims) - 1))
+
+
+def _group_nested_lists(
+    answer: str, candidates: list[_SentenceCandidate]
+) -> list[_SentenceCandidate]:
+    grouped: list[_SentenceCandidate] = []
+    position = 0
+    while position < len(candidates):
+        candidate = candidates[position]
+        if _is_groupable_list_intro(candidate) and position + 1 < len(
+            candidates
+        ):
+            next_position = position + 1
+            end: int | None = None
+            groupable = False
+            while next_position < len(candidates):
+                first_item = candidates[next_position]
+                if not first_item.is_list_item:
+                    break
+                item_end = next_position
+                meaningful: list[_CleanedSpan] = []
+                while (
+                    item_end < len(candidates)
+                    and candidates[item_end].is_list_item
+                    and candidates[item_end].list_item_start
+                    == first_item.list_item_start
+                ):
+                    cleaned = _clean_sentence(candidates[item_end])
+                    if cleaned is not None:
+                        meaningful.append(cleaned)
+                    item_end += 1
+                if not meaningful:
+                    next_position = item_end
+                    continue
+                if (
+                    any(
+                        later.is_list_item
+                        and later.list_indent > first_item.list_indent
+                        for later in candidates[item_end:]
+                    )
+                ):
+                    groupable = False
+                    break
+                if not all(
+                    _item_depends_on_intro(cleaned, candidate)
+                    for cleaned in meaningful
+                ):
+                    groupable = False
+                    break
+                if all(_is_noun_phrase(cleaned.text) for cleaned in meaningful):
+                    groupable = False
+                    break
+                if (
+                    item_end < len(candidates)
+                    and not candidates[item_end].is_list_item
+                    and not candidates[item_end].is_heading
+                    and not _is_list_intro(candidates[item_end])
+                    and any(
+                        candidate.is_list_item
+                        for candidate in candidates[item_end + 1 :]
+                    )
+                ):
+                    groupable = False
+                    break
+                end = candidates[item_end - 1].end
+                groupable = True
+                next_position = item_end
+            if groupable and end is not None:
+                grouped.append(
+                    _SentenceCandidate(
+                        index=candidate.index,
+                        text=answer[candidate.start : end],
+                        start=candidate.start,
+                        end=end,
+                        is_list_item=candidate.is_list_item,
+                        list_indent=candidate.list_indent,
+                        list_item_start=candidate.list_item_start,
+                        is_grouped=True,
+                    )
+                )
+                position = next_position
+                continue
+        grouped.append(candidate)
+        position += 1
+    return grouped
+
+
+def _is_groupable_list_intro(candidate: _SentenceCandidate) -> bool:
+    if not _is_list_intro(candidate):
+        return False
+    value = _strip_citations(_normalize_markdown(candidate.text)).strip()
+    body = value.rstrip(":;").strip()
+    if not body or _is_noun_phrase(body):
+        return False
+    return True
+
+
+def _item_depends_on_intro(
+    cleaned: _CleanedSpan, intro: _SentenceCandidate
+) -> bool:
+    text = cleaned.text.strip()
+    if not text:
+        return False
+    if _is_meta_commentary(text):
+        return False
+    if _split_list_label_body(text) is not None:
+        return False
+    if _has_independent_subject(text):
+        return False
+    if _is_imperative_claim(text):
+        return False
+    return (
+        _is_dependent_nominal_clause(text)
+        or _is_noun_phrase(text)
+        or _starts_with_verb(text)
+    )
+
+
+def _is_list_intro(candidate: _SentenceCandidate) -> bool:
+    value = candidate.text.strip()
+    if not value.endswith((":", "：")):
+        return False
+    if candidate.heading_level > 0:
+        return False
+    value = re.sub(rf"^{_BLOCKQUOTE_PREFIX}", "", value).strip()
+    if value.startswith(("#", "**", "__")):
+        return False
+    if _ends_with_question(value):
+        return False
+    return len(_word_tokens(value.rstrip(":："))) >= 2
+
+
+def _is_dependent_list_item(
+    cleaned: _CleanedSpan, candidate: _SentenceCandidate
+) -> bool:
+    text = cleaned.text.strip()
+    if not text or _is_meta_commentary(text):
+        return False
+    if _is_dependent_nominal_clause(text):
+        return True
+    if _has_independent_subject(text):
+        return False
+    if _is_imperative_claim(text):
+        return False
+    if _split_list_label_body(text) is not None:
+        return False
+    if _is_noun_phrase(text):
+        return True
+    return _starts_with_verb(text)
+
+
+def _is_imperative_claim(text: str) -> bool:
+    words = _word_tokens(text)
+    if not words or not _has_terminal_punctuation(text):
+        return False
+    return words[0].casefold() in _VERB_BASES
+
+
+def _grouped_hypothesis(answer: str, sentence: _SentenceCandidate) -> str:
+    raw = answer[sentence.start : sentence.end]
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return _strip_citations(raw.strip())
+    intro = _strip_citations(
+        _strip_terminal_sentence(
+            _strip_emphasis_edges(_normalize_markdown(lines[0]))
+            .rstrip(":;")
+            .strip()
+        )
+    )
+    items: list[str] = []
+    for line in lines[1:]:
+        item = _LIST_PREFIX.sub("", line).strip()
+        if not item or _LIST_MARKER_ONLY.match(item):
+            continue
+        item = _strip_citations(
+            _strip_emphasis_edges(_normalize_markdown(item))
+        )
+        item = _strip_terminal_sentence(item)
+        if item and not _CITATION_ONLY.fullmatch(item):
+            items.append(item)
+    if not items:
+        return f"{intro}." if intro else ""
+    separator = (
+        ": "
+        if _has_independent_subject(intro)
+        and not _MODAL_LEAD_IN.search(intro)
+        else " "
+    )
+    hypothesis = f"{intro}{separator}{'; '.join(items)}"
+    if not _has_terminal_punctuation(hypothesis):
+        hypothesis += "."
+    return hypothesis
+
+
+def _split_sentences_preserving_citations(
+    text: str, *, join_wrapped_lines: bool
+) -> list[TextSpan]:
+    spans = split_sentences(text, join_wrapped_lines=join_wrapped_lines)
+    if len(spans) < 2:
+        return spans
+    merged: list[TextSpan] = []
+    start = spans[0].start
+    end = spans[0].end
+    for span in spans[1:]:
+        partial = text[start:end]
+        if _has_unclosed_citation(partial):
+            end = span.end
+            continue
+        merged.append(TextSpan(start=start, end=end, text=text[start:end]))
+        start = span.start
+        end = span.end
+    merged.append(TextSpan(start=start, end=end, text=text[start:end]))
+    return merged
+
+
+def _has_unclosed_citation(text: str) -> bool:
+    for opener, closer in (("(", ")"), ("[", "]")):
+        last_open = text.rfind(opener)
+        if last_open >= 0 and text.rfind(closer) < last_open:
+            tail = text[last_open:].casefold()
+            if re.match(r"[\[(]\s*(?:source|evidence)\b", tail):
+                return True
+    return False
 
 
 def _sentences(answer: str) -> list[_SentenceCandidate]:
@@ -576,6 +1382,7 @@ def _sentences(answer: str) -> list[_SentenceCandidate]:
         heading_level: int = 0,
         is_list_item: bool = False,
         list_indent: int = 0,
+        preserve_list_item: bool = False,
     ) -> None:
         nonlocal index
         block = answer[start:end]
@@ -598,7 +1405,24 @@ def _sentences(answer: str) -> list[_SentenceCandidate]:
             )
             index += 1
             return
-        for span in split_sentences(block, join_wrapped_lines=True):
+        if preserve_list_item and is_list_item:
+            end = start + len(block.rstrip())
+            candidates.append(
+                _SentenceCandidate(
+                    index=index,
+                    text=answer[start:end],
+                    start=start,
+                    end=end,
+                    is_list_item=True,
+                    list_indent=list_indent,
+                    list_item_start=start,
+                )
+            )
+            index += 1
+            return
+        for span in _split_sentences_preserving_citations(
+            block, join_wrapped_lines=True
+        ):
             if not span.text.strip():
                 continue
             candidates.append(
@@ -630,6 +1454,48 @@ def _sentences(answer: str) -> list[_SentenceCandidate]:
         if not content.strip():
             flush_paragraph()
             position += 1
+            continue
+
+        if _is_markdown_table_row(content):
+            flush_paragraph()
+            first_row = True
+            while (
+                position < len(lines)
+                and _is_markdown_table_row(
+                    lines[position].rstrip("\r\n")
+                )
+            ):
+                row = lines[position].rstrip("\r\n")
+                row_start = line_starts[position]
+                cells = _markdown_table_cells(row)
+                if _is_table_separator_row(cells):
+                    position += 1
+                    continue
+                if first_row:
+                    first_row = False
+                    position += 1
+                    continue
+                if len(cells) >= 2:
+                    label, _label_start, _label_end = cells[0]
+                    body, body_start, body_end = cells[1]
+                    if body:
+                        candidates.append(
+                            _SentenceCandidate(
+                                index=index,
+                                text=body,
+                                start=row_start + body_start,
+                                end=row_start + body_end,
+                                is_list_item=True,
+                                list_item_start=row_start,
+                                subject_hint=(
+                                    label
+                                    if _starts_with_verb(body)
+                                    else None
+                                ),
+                            )
+                        )
+                        index += 1
+                position += 1
             continue
 
         markdown_heading = _MARKDOWN_HEADING.match(content)
@@ -673,12 +1539,38 @@ def _sentences(answer: str) -> list[_SentenceCandidate]:
                     line_starts[next_position] + len(continuation)
                 )
                 next_position += 1
-            append_spans(
-                line_start,
-                block_end,
-                is_list_item=True,
-                list_indent=indent,
+            inline_base = line_start + list_match.end("marker")
+            inline_markers = list(
+                _INLINE_LIST_MARKER.finditer(answer[inline_base:line_end])
             )
+            if inline_markers:
+                first_marker = inline_base + inline_markers[0].start()
+                append_spans(line_start, first_marker, is_list_item=False)
+                for marker_index, marker in enumerate(inline_markers):
+                    item_start = inline_base + marker.start()
+                    item_end = (
+                        inline_base
+                        + (
+                            inline_markers[marker_index + 1].start()
+                            if marker_index + 1 < len(inline_markers)
+                            else len(answer[inline_base:line_end])
+                        )
+                    )
+                    append_spans(
+                        item_start,
+                        item_end,
+                        is_list_item=True,
+                        list_indent=indent + 2,
+                        preserve_list_item=True,
+                    )
+            else:
+                append_spans(
+                    line_start,
+                    block_end,
+                    is_list_item=True,
+                    list_indent=indent,
+                    preserve_list_item=True,
+                )
             position = next_position
             continue
 
@@ -697,6 +1589,44 @@ def _sentences(answer: str) -> list[_SentenceCandidate]:
 
     flush_paragraph()
     return candidates
+
+
+def _is_markdown_table_row(content: str) -> bool:
+    value = content.strip()
+    return (
+        len(value) >= 3
+        and value.startswith("|")
+        and value.endswith("|")
+        and value.count("|") >= 2
+    )
+
+
+def _markdown_table_cells(
+    content: str,
+) -> list[tuple[str, int, int]]:
+    value = content.rstrip("\r\n")
+    boundaries = [
+        index for index, character in enumerate(value) if character == "|"
+    ]
+    cells: list[tuple[str, int, int]] = []
+    for left, right in zip(boundaries, boundaries[1:]):
+        raw = value[left + 1 : right]
+        text = raw.strip()
+        if not text:
+            cells.append(("", right, right))
+            continue
+        start = left + 1 + len(raw) - len(raw.lstrip())
+        cells.append((text, start, start + len(text)))
+    return cells
+
+
+def _is_table_separator_row(
+    cells: list[tuple[str, int, int]],
+) -> bool:
+    return bool(cells) and all(
+        re.fullmatch(r":?-{3,}:?", text)
+        for text, _start, _end in cells
+    )
 
 
 def _is_plain_heading_line(
@@ -741,9 +1671,14 @@ def _clean_sentence(sentence: _SentenceCandidate) -> _CleanedSpan | None:
     base = sentence.text
     offset = 0
     is_list_item = sentence.is_list_item
-    for _ in range(3):
+    for _ in range(4):
         if _LIST_PREFIX.match(base):
             is_list_item = True
+        quote = _BARE_BLOCKQUOTE_PREFIX.match(base)
+        if quote is not None:
+            offset += quote.end()
+            base = base[quote.end() :]
+            continue
         prefix = _LEADING_PREFIX.match(base)
         if prefix is None:
             break
@@ -758,6 +1693,10 @@ def _clean_sentence(sentence: _SentenceCandidate) -> _CleanedSpan | None:
 
     if _META_PREFIX.match(base):
         return None
+    if _LIST_MARKER_ONLY.match(base.strip()):
+        return None
+    if _CITATION_ONLY.fullmatch(base):
+        return None
 
     base_start = offset
     base_end = len(sentence.text)
@@ -771,8 +1710,10 @@ def _clean_sentence(sentence: _SentenceCandidate) -> _CleanedSpan | None:
 
     raw = sentence.text[base_start:base_end]
     label = _SECTION_LABEL.match(raw)
-    if label is not None and _is_section_label(
-        label.group("label"), raw[label.end() :]
+    if (
+        not is_list_item
+        and label is not None
+        and _is_section_label(label.group("label"), raw[label.end() :])
     ):
         base_start += label.end()
         raw = sentence.text[base_start:base_end]
@@ -790,6 +1731,39 @@ def _clean_sentence(sentence: _SentenceCandidate) -> _CleanedSpan | None:
         heading_level=sentence.heading_level,
         list_indent=sentence.list_indent,
         list_item_start=sentence.list_item_start,
+    )
+
+
+def _assertive_span(cleaned: _CleanedSpan) -> _CleanedSpan | None:
+    if not cleaned.is_heading or cleaned.heading_level > 0:
+        return None
+    text = cleaned.text.strip()
+    if not text.endswith(":"):
+        return None
+    if re.search(r"\bconsider(?:s)?\s*:\s*$", text, re.IGNORECASE):
+        return None
+    if cleaned.start + len(text) != cleaned.end:
+        return None
+    body = text[:-1].strip()
+    if _MODAL_LEAD_IN.search(body) or re.search(
+        r"\b(?:including|the\s+following|as\s+follows|lists?|describes?|"
+        r"defines?|covers?)\s*$",
+        body,
+        re.IGNORECASE,
+    ):
+        return None
+    tail = _ENUMERATIVE_TAIL.search(body)
+    if tail is not None:
+        body = body[: tail.start()].rstrip(" ,;")
+    if not body or not _has_independent_subject(body):
+        return None
+    if not _has_finite_verb(body) or not _looks_factual(body):
+        return None
+    return replace(
+        cleaned,
+        text=body,
+        end=cleaned.start + len(body),
+        is_heading=False,
     )
 
 
@@ -873,6 +1847,10 @@ def _label_body_claim(
     heading: str | None,
     parent: str | None,
 ) -> tuple[str, str | None, bool, str | None]:
+    if _is_dependent_nominal_clause(body):
+        hypothesis = _label_definition_hypothesis(body, label)
+        if hypothesis is not None:
+            return hypothesis, label, True, None
     if _has_independent_subject(body):
         return body, label, True, None
     if _is_noun_phrase(body) or _starts_with_verb(body):
@@ -884,6 +1862,67 @@ def _label_body_claim(
         "proposition."
     )
     return body, label, False, reason
+
+
+def _label_definition_hypothesis(body: str, label: str) -> str | None:
+    label_text = _strip_terminal_sentence(label)
+    if not label_text or not _is_noun_phrase(label_text):
+        return None
+    if not (
+        _is_noun_phrase(body) or _is_dependent_nominal_clause(body)
+    ):
+        return None
+    value = _lower_initial(_strip_terminal_sentence(body))
+    if label_text.casefold().endswith(("criteria", "criterion")):
+        verb = (
+            "define"
+            if label_text.casefold().endswith("criteria")
+            else "defines"
+        )
+    else:
+        verb = "are" if _is_plural_noun_phrase(label_text) else "is"
+    return f"{_capitalize(label_text)} {verb} {value}."
+
+
+def _is_plural_noun_phrase(text: str) -> bool:
+    words = _word_tokens(text)
+    if not words:
+        return False
+    last = words[-1].casefold()
+    if last in {"criteria", "people", "staff", "data"}:
+        return True
+    return last.endswith("s") and not last.endswith("ss")
+
+
+def _is_dependent_nominal_clause(text: str) -> bool:
+    value = _strip_terminal_sentence(text)
+    words = _word_tokens(value)
+    if len(words) < 3:
+        return False
+    first = words[0].casefold()
+    if first not in _DETERMINERS:
+        return False
+    finite_index = next(
+        (
+            index
+            for index, word in enumerate(words)
+            if _is_finite_verb(word)
+        ),
+        None,
+    )
+    if finite_index is None:
+        return False
+    before = words[:finite_index]
+    if not any(word.casefold() in _DETERMINERS for word in before[1:]):
+        return False
+    after = words[finite_index + 1 :]
+    relative_complement = re.search(
+        r"\b(?:willing|able|required|needed|used|intended|allowed|"
+        r"permitted|expected|unable)\s+to\s+[A-Za-z][A-Za-z'-]*$",
+        " ".join(after),
+        re.IGNORECASE,
+    )
+    return not after or relative_complement is not None
 
 
 def _split_compound(sentence: _SentenceCandidate) -> list[_SentenceCandidate]:
@@ -1082,6 +2121,35 @@ def _is_independent_clause(text: str) -> bool:
     return len(words) >= 3 and _has_independent_subject(text)
 
 
+def _has_explicit_subject(text: str) -> bool:
+    words = _word_tokens(text)
+    if not words:
+        return False
+    first = words[0].casefold()
+    return (
+        first in _DETERMINERS
+        or (
+            words[0][:1].isupper()
+            and first not in _VERB_BASES
+            and first not in _PREPOSITIONAL_STARTERS
+            and first not in _CONTINUATION_STARTERS
+        )
+    )
+
+
+def _clean_context_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = _strip_citations(_normalize_markdown(value)).strip()
+    if not cleaned or _CITATION_ONLY.fullmatch(cleaned):
+        return None
+    if _KNOWN_SECTION_LABEL.fullmatch(cleaned):
+        return None
+    if not any(character.isalpha() for character in cleaned):
+        return None
+    return cleaned
+
+
 def _claim_context(
     text: str,
     lead_in: str | None,
@@ -1090,7 +2158,11 @@ def _claim_context(
     parent: str | None = None,
     subject_hint: str | None = None,
 ) -> tuple[str, str | None, bool, str | None]:
-    value = text.strip()
+    value = _strip_citations(text.strip())
+    lead_in = _clean_context_value(lead_in)
+    heading = _clean_context_value(heading)
+    parent = _clean_context_value(parent)
+    subject_hint = _clean_context_value(subject_hint)
     if not value or not _is_latin_text(value):
         return value, None, True, None
     if subject_hint and _starts_with_verb(value):
@@ -1151,7 +2223,77 @@ def _can_reconstruct(
         return True
     if _starts_with_anaphoric_subject(value):
         return parent is not None
-    return bool(lead_in or heading or parent)
+    if _starts_with_verb(value):
+        return bool(lead_in or heading or parent)
+    if parent is not None:
+        return _is_noun_phrase(value) and _is_noun_phrase(
+            _strip_terminal_sentence(parent)
+        )
+    if lead_in is not None and _lead_in_supports_noun_phrase(value, lead_in):
+        return True
+    if heading is not None and _heading_asserts_relationship(value, heading):
+        return True
+    return False
+
+
+def _lead_in_supports_noun_phrase(value: str, lead_in: str) -> bool:
+    if not _is_noun_phrase(value):
+        return False
+    context = lead_in.strip().rstrip(":：").strip()
+    if _MODAL_LEAD_IN.search(context):
+        return False
+    if re.search(r"\b(?:are|is)\s*$", context, re.IGNORECASE):
+        return True
+    if re.search(r"\bconsider(?:s)?\s*$", context, re.IGNORECASE):
+        return True
+    if re.match(
+        r"^(?:the following|these|they)\s+are\s+",
+        context,
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(
+        re.match(
+            r"^(?:(?:the|our|its)\s+)?(?:main\s+|key\s+|several\s+)?"
+            r"(?:objectives?|goals?|benefits?|components?|elements?|types?|"
+            r"steps?|ways?|roles?|responsibilities?|risks?|threats?)\s+"
+            r"(?:of|for)\b",
+            context,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _heading_asserts_relationship(value: str, heading: str) -> bool:
+    if not _is_noun_phrase(value):
+        return False
+    context = heading.strip().rstrip(":：").strip()
+    if re.match(
+        r"^how\s+.+?\s+(?:helps?|supports?|enables?|allows?|assists?|"
+        r"contributes?\s+to)\s+.+$",
+        context,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.match(
+        r"^(?:the\s+)?(?:main\s+|key\s+|several\s+)?"
+        r"(?:objectives?|goals?|benefits?|components?|elements?|types?|"
+        r"ways?|steps?|roles?|responsibilities?|risks?|threats?)\s+"
+        r"(?:of|for)\s+.+$",
+        context,
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:components?|elements?|types?|roles?|responsibilities?|"
+            r"objectives?|goals?|benefits?|steps?|ways?|risks?|threats?|"
+            r"controls?|principles?|features?|properties?|themes?|"
+            r"categories?)\s*$",
+            context,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _nested_parent(
@@ -1227,11 +2369,19 @@ def _contextual_hypothesis(
         hypothesis = _hypothesis_from_parent(value, parent)
         if hypothesis is not None:
             return hypothesis, parent
-    if lead_in:
+    if lead_in and (
+        _starts_with_verb(value)
+        or _is_noun_phrase(value)
+    ):
         hypothesis = _hypothesis_from_lead_in(value, lead_in)
         if hypothesis is not None:
             return hypothesis, lead_in
-    if heading:
+        if _is_noun_phrase(value):
+            return value, lead_in
+    if heading and (
+        _starts_with_verb(value)
+        or _heading_asserts_relationship(value, heading)
+    ):
         hypothesis = _hypothesis_from_heading(value, heading)
         if hypothesis is not None:
             return hypothesis, heading
@@ -1254,7 +2404,7 @@ def _hypothesis_from_lead_in(value: str, lead_in: str) -> str | None:
     value = _strip_terminal_sentence(value)
     context = lead_in.strip().rstrip(":：").strip()
     modal = _lead_subject_modal(context)
-    if modal is not None:
+    if modal is not None and _starts_with_verb(value):
         return f"{modal} {_lower_initial(value)}."
 
     category = re.match(
@@ -1316,7 +2466,7 @@ def _hypothesis_from_heading(value: str, heading: str) -> str | None:
     value = _strip_terminal_sentence(value)
     context = heading.strip().rstrip(":：").strip()
     modal = _lead_subject_modal(context)
-    if modal is not None:
+    if modal is not None and _starts_with_verb(value):
         return f"{modal} {_lower_initial(value)}."
 
     how = re.match(
@@ -1512,6 +2662,8 @@ def _has_independent_subject(text: str) -> bool:
     words = _word_tokens(value)
     if not words:
         return False
+    if _is_dependent_nominal_clause(value):
+        return False
     first = words[0].casefold()
     if _is_adverb(first):
         return False
@@ -1607,6 +2759,33 @@ def _lower_initial(text: str) -> str:
     return text[0].lower() + text[1:]
 
 
+def _non_claim_reason(text: str) -> str:
+    value = text.strip()
+    if not value:
+        return "The fragment is empty."
+    if _ends_with_question(value):
+        return "A question is not a factual claim."
+    if _is_meta_commentary(value):
+        return (
+            "The text comments on the available evidence rather than "
+            "asserting a factual claim."
+        )
+    if _is_heading_like(value, value):
+        return (
+            "The text is a heading or section label without an independent "
+            "factual assertion."
+        )
+    if _is_latin_text(value) and not _has_finite_verb(value):
+        return (
+            "The fragment has no finite predicate and cannot be evaluated as "
+            "a standalone proposition."
+        )
+    return (
+        "The text does not contain a complete, independently verifiable "
+        "factual proposition."
+    )
+
+
 def _looks_factual(claim: str) -> bool:
     text = claim.strip()
     if not text:
@@ -1615,6 +2794,8 @@ def _looks_factual(claim: str) -> bool:
     if not normalized:
         return False
     if _ends_with_question(normalized):
+        return False
+    if _is_meta_commentary(normalized):
         return False
     if any(pattern.match(normalized) for pattern in _INTRO_PATTERNS):
         return False
@@ -1629,6 +2810,8 @@ def _looks_factual(claim: str) -> bool:
         return False
 
     if _is_latin_text(normalized):
+        if _has_malformed_modal_clause(normalized):
+            return False
         if _is_likely_english(normalized) and not _has_finite_verb(normalized):
             return False
         if not _has_terminal_punctuation(normalized) and not _has_finite_verb(
@@ -1638,10 +2821,30 @@ def _looks_factual(claim: str) -> bool:
     return True
 
 
+def _has_malformed_modal_clause(text: str) -> bool:
+    words = _word_tokens(text)
+    for index, word in enumerate(words[:-1]):
+        if word.casefold() not in _MODAL_AUXILIARIES:
+            continue
+        following_index = index + 1
+        if words[following_index].casefold() == "not":
+            following_index += 1
+            if following_index >= len(words):
+                return True
+        following = words[following_index].casefold()
+        if following in {"be", "have", "do"}:
+            continue
+        if not _is_verb_like(words[following_index]):
+            return True
+    return False
+
+
 def _is_heading_like(raw: str, normalized: str) -> bool:
-    if normalized.endswith((":", "：")):
+    if _KNOWN_SECTION_LABEL.fullmatch(normalized.strip()):
         return True
-    if _QUESTION_START.match(normalized):
+    if normalized.endswith((":", "��s")):
+        return True
+    if _QUESTION_START.match(normalized) and not _has_finite_verb(normalized):
         return True
     if _EMPHASIS_WRAPPED.match(raw.strip()):
         return True
@@ -1807,8 +3010,19 @@ def _make_claim(
 
 
 def build_claim_extractor(
-    settings: Settings, generator: object | None = None
+    settings: Settings,
+    generator: object | None = None,
+    detector: object | None = None,
 ) -> ClaimExtractor:
+    """Build the deterministic claim extractor.
+
+    ``generator`` and ``detector`` are accepted for interface compatibility so
+    existing call sites (verification and hallucination checks) do not need to
+    change. They are intentionally unused: claim extraction is local,
+    deterministic, and never calls a model.
+    """
+
+    del generator, detector
     return HeuristicClaimExtractor(
-        max_claims=settings.verification_max_extracted_claims
+        max_claims=min(MAX_CLAIMS, settings.verification_max_extracted_claims)
     )

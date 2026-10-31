@@ -39,7 +39,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Unit/API tests inject deterministic fake models, so they do not download large
-weights. Latest local result: **251 passed, 9 skipped**. Real-model tests are
+weights. Latest local result: **329 passed, 12 skipped**. Real-model tests are
 opt-in:
 
 ```powershell
@@ -111,14 +111,23 @@ answer language detection → normalization/sentence segmentation
   a replacement on your own data. The model can also run on a dedicated Hugging
   Face Inference Endpoint; see [Hosted NLI](#hosted-nli).
 - NER: `Davlan/xlm-roberta-base-wikiann-ner`.
-- Claim extraction is local and deterministic; it uses headings as context while
-  excluding them from claim text, extracts nested/numbered/bullet list items,
-  separates short list labels from complete proposition bodies, reconstructs
-  imperative and noun-led fragments from lead-ins or parent items, resolves
-  immediate pronoun references, excludes metadata/questions/introductory text,
-  and splits clearly independent clauses. It returns the original claim, the
-  reconstructed NLI hypothesis, and reconstruction context. It never calls the
-  answer-generation LLM.
+- Claim extraction is local, deterministic, and language-aware; it never calls
+  an LLM or downloads a claim-extraction model. English text uses sentence,
+  heading, list, and clause rules. Predominantly Devanagari text uses
+  conservative Hindi predicate rules and accepts a claim only when the original
+  text already contains a complete predicate.
+- Headings, metadata, questions, introductory lead-ins, and meta-commentary
+  about missing evidence are excluded. Dependent list items under an
+  introductory lead-in are grouped into one claim that preserves the original
+  source span; complete bullets remain independent. Coordinated Hindi
+  `अथवा/तथा/और/;` clauses are split only when both sides are independently
+  complete, and Devanagari tokens use the shared `word_spans` tokenizer so
+  combining marks are preserved.
+- Every accepted claim has exact original-answer offsets and
+  `location_status="verified"`. Extraction is hard-capped at 30 claims,
+  deduplicated by normalized containment (preferring the more complete claim),
+  and ordered by source position. `VERIFICATION_MAX_EXTRACTED_CLAIMS` may lower
+  the cap but cannot raise it above 30.
 - Claim matching reuses the configured multilingual embedding model.
 - Models are lazy-loaded; label maps are read from model config, not hardcoded.
 - Local inference deduplicates identical claim/evidence pairs, reuses recent
@@ -332,4 +341,6 @@ with a clear configuration error. The key is never logged or returned. Use
 - Retrieval `distance`/`retrieval_score` values are cosine distances, never
   probabilities or factual-verification results.
 - Verification is pretrained inference only. Fine-tuning, TF-IDF baseline
-  comparison, span localization, and repair belong to later Phase 4B+ work.
+  comparison, and span localization belong to later phases. Hallucination
+  Repair uses a fixed three-iteration claim queue and re-verifies every
+  correction with both existing verification systems.

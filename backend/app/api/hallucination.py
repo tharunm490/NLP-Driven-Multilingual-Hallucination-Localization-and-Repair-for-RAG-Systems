@@ -26,6 +26,23 @@ from app.services.request_limiter import RequestLimiter
 router = APIRouter(prefix="/hallucination", tags=["hallucination"])
 
 
+@router.get(
+    "/results/{result_id}",
+    response_model=HallucinationCheckResponse,
+)
+async def get_result(
+    result_id: str,
+    service: HallucinationCheckService = Depends(get_hallucination_check_service),
+) -> HallucinationCheckResponse:
+    """Restore a previously completed check without rerunning inference."""
+    response = service.get_result(result_id)
+    if response is None:
+        raise RagResultNotFoundError(
+            "No Hallucination Checks result is available for that Ask result yet."
+        )
+    return response
+
+
 @router.post("/check", response_model=HallucinationCheckResponse)
 async def check(
     payload: HallucinationCheckRequest,

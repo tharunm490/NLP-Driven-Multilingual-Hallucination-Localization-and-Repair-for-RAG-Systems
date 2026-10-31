@@ -1,4 +1,4 @@
-"""Tests for local factual claim extraction."""
+"""Tests for factual claim extraction."""
 
 from __future__ import annotations
 
@@ -14,6 +14,27 @@ ANSWER = (
     "2. The policy requires daily reviews [Source 2].\n"
     "Sources: [Source 1]\n"
     "What is the review frequency?\n"
+)
+
+ISO_RISK_ANSWER = (
+    "# Risk assessment\n\n"
+    "Risk criteria\n"
+    "The organization must establish and maintain risk criteria that include:\n\n"
+    "- Risk-acceptance criteria\n"
+    "The level of risk the organization is willing to tolerate.\n"
+    "- Risk acceptance criteria: The level of risk the organization is "
+    "willing to tolerate.\n"
+    "- Risk owners\n"
+    "The organization must identify the risk owners.\n"
+    "- Risk analysis\n"
+    "The organization must analyze the risks.\n"
+    "- Risk evaluation: The organization must compare risk analysis results "
+    "with the risk criteria.\n"
+    "- If a risk exceeds the 5% tolerance, the organization must treat the "
+    "risk.\n"
+    "- The organization must not accept a risk without documented approval.\n"
+    "- The organization must identify the risk owners, and the organization "
+    "must document the risk criteria.\n"
 )
 
 HINDI_ANSWER = (
@@ -139,6 +160,28 @@ def test_heuristic_extractor_does_not_split_a_list_noun_phrase():
     assert [claim.claim for claim in result.claims] == [answer]
 
 
+def test_extractor_accepts_assertions_and_skips_malformed_fragments():
+    cases = {
+        "Risk criteria": False,
+        "Risk analysis": False,
+        "For each identified risk the organization:": False,
+        "The organization must risk owners.": False,
+        (
+            "Risk-acceptance criteria define the level of risk an organization "
+            "is willing to tolerate."
+        ): True,
+        "The organization must identify the risk owners.": True,
+        "The organization assesses potential consequences and likelihood.": True,
+        "The organization does not accept risks above its defined criteria.": True,
+    }
+
+    for answer, expected_claim in cases.items():
+        result = HeuristicClaimExtractor().extract(answer)
+        assert bool(result.claims) is expected_claim
+        if not expected_claim:
+            assert result.skipped
+
+
 def test_heuristic_extractor_preserves_multilingual_claim():
     result = HeuristicClaimExtractor().extract(HINDI_ANSWER)
 
@@ -259,15 +302,10 @@ def test_extractor_resolves_pronoun_in_same_list_item_continuation():
 
     result = HeuristicClaimExtractor().extract(answer)
 
-    assert len(result.claims) == 2
-    continuation = result.claims[1]
-    assert continuation.claim.startswith("It then formulates")
-    assert continuation.hypothesis == (
-        "The organization then formulates and implements a risk-treatment "
-        "plan, retaining documentation of the treatment outcomes."
+    assert len(result.claims) == 1
+    assert "It then formulates and implements a risk-treatment plan" in (
+        result.claims[0].claim
     )
-    assert continuation.evaluable is True
-    assert continuation.incomplete_reason is None
 
 
 def test_extractor_does_not_split_an_infinitive_verb_list_after_malformed_bold():
@@ -301,15 +339,8 @@ def test_extractor_evaluates_parenthetical_body_and_resolves_followup_pronoun():
 
     result = HeuristicClaimExtractor().extract(answer)
 
-    assert len(result.claims) == 2
-    assessment, followup = result.claims
-    assert assessment.evaluable is True
-    assert assessment.hypothesis.startswith("At planned intervals")
-    assert followup.evaluable is True
-    assert followup.hypothesis == (
-        "At planned intervals the organization ensures that identified risks "
-        "to confidentiality, integrity or availability are addressed."
-    )
+    assert len(result.claims) == 1
+    assert "This ensures that identified risks" in result.claims[0].claim
 
 
 def test_extractor_keeps_dash_parenthetical_summary_sentence_intact():
@@ -472,13 +503,462 @@ def test_extractor_does_not_split_dash_inside_an_incomplete_list_item():
     assert result.claims[0].evaluable is True
 
 
-def test_build_claim_extractor_is_local_even_with_a_real_provider(settings: Settings):
+def test_extractor_keeps_complete_bullet_with_multiple_clauses_intact():
+    answer = (
+        "- Adoption of an ISMS is presented as a strategic decision that must "
+        "align with the organization's needs, objectives, security requirements, "
+        "processes, size and structure, and it is expected to evolve over time.\n"
+        "- The organization documents the decision and reviews it annually."
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        answer.splitlines()[0][2:],
+        answer.splitlines()[1][2:],
+    ]
+    assert all(
+        answer[claim.claim_start : claim.claim_end] == claim.claim
+        for claim in result.claims
+    )
+    assert not any(
+        claim.claim == "it is expected to evolve over time."
+        for claim in result.claims
+    )
+
+
+def test_extractor_extracts_all_factual_bullets_across_topic_headings():
+    answer = (
+        "# Determining the scope of the ISMS\n"
+        "- The organization defines the boundaries and applicability of its "
+        "ISMS and documents its scope. [Source 1]\n\n"
+        "# Internal, external, and interested-party factors\n"
+        "- The organization considers relevant external and internal issues. "
+        "[Source 1]\n"
+        "- The organization considers interested-party requirements and "
+        "determines which requirements the ISMS addresses. [Source 1]\n"
+        "- The organization considers interfaces and dependencies between its "
+        "own activities and those performed by other organizations. [Source 1]\n"
+        "- Interested-party requirements may include legal, regulatory, and "
+        "contractual obligations. [Source 1]"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert len(result.claims) == 5
+    assert [claim.claim for claim in result.claims] == [
+        "The organization defines the boundaries and applicability of its "
+        "ISMS and documents its scope.",
+        "The organization considers relevant external and internal issues.",
+        "The organization considers interested-party requirements and "
+        "determines which requirements the ISMS addresses.",
+        "The organization considers interfaces and dependencies between its "
+        "own activities and those performed by other organizations.",
+        "Interested-party requirements may include legal, regulatory, and "
+        "contractual obligations.",
+    ]
+    assert all(
+        answer[claim.claim_start : claim.claim_end] == claim.claim
+        for claim in result.claims
+    )
+
+
+def test_extractor_keeps_when_bullet_with_trailing_citation():
+    answer = (
+        "**Establishing information-security objectives**\n"
+        "- The organization shall set information-security objectives at "
+        "relevant functions and levels, and document them [Source 1].\n\n"
+        "**Planning to achieve the objectives**\n"
+        "- When planning how to achieve its information-security objectives, "
+        "the organization shall specify what will be done, what resources "
+        "will be required, who will be responsible, when it will be "
+        "completed, and how the results will be evaluated [Source 1]."
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert len(result.claims) == 2
+    assert result.claims[1].claim.startswith(
+        "When planning how to achieve its information-security objectives"
+    )
+    assert all(
+        answer[claim.claim_start : claim.claim_end] == claim.claim
+        for claim in result.claims
+    )
+
+
+def test_extractor_recursively_extracts_nested_bullets_with_exact_spans():
+    answer = (
+        "The organization must consider interested parties:\n\n"
+        "- Identify relevant interested parties.\n"
+        "- Determine their requirements:\n\n"
+        "  - Legal requirements.\n"
+        "  - Regulatory requirements.\n"
+        "  - Contractual requirements."
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+    claims = {claim.claim: claim for claim in result.claims}
+
+    assert set(claims) == {
+        "The organization must consider interested parties",
+        "Identify relevant interested parties.",
+        "Legal requirements.",
+        "Regulatory requirements.",
+        "Contractual requirements.",
+    }
+    for claim in result.claims:
+        assert answer[claim.claim_start : claim.claim_end] == claim.claim
+    assert claims["Legal requirements."].context == "Determine their requirements:"
+
+
+def test_extractor_splits_inline_nested_bullets_without_splitting_their_text():
+    bullet = "\u2022"
+    answer = (
+        "- The scope must be established by considering:     "
+        f"{bullet} the external and internal issues relevant to the organization "
+        "(clause 4.1) [Source 1];     "
+        f"{bullet} the requirements of interested parties (clause 4.2) "
+        "[Source 1];     "
+        f"{bullet} the interfaces and dependencies between the organization's "
+        "activities and those performed by other organizations [Source 1]."
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        "the external and internal issues relevant to the organization "
+        "(clause 4.1)",
+        "the requirements of interested parties (clause 4.2)",
+        "the interfaces and dependencies between the organization's "
+        "activities and those performed by other organizations",
+    ]
+    assert all(
+        answer[claim.claim_start : claim.claim_end] == claim.claim
+        for claim in result.claims
+    )
+    assert all(
+        claim.context == "The scope must be established by considering:"
+        for claim in result.claims
+    )
+
+
+def test_extractor_keeps_parent_context_for_all_dependent_children():
+    answer = (
+        "When defining the scope, the organization must consider:\n\n"
+        "- The external and internal issues relevant to the organization.\n"
+        "- The requirements of interested parties.\n"
+        "- The interfaces and dependencies between its own activities and "
+        "those performed by other organizations."
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert len(result.claims) == 3
+    assert all(
+        claim.context
+        == "When defining the scope, the organization must consider"
+        for claim in result.claims
+    )
+    assert all(answer[claim.claim_start : claim.claim_end] == claim.claim for claim in result.claims)
+
+
+def test_build_claim_extractor_always_returns_the_heuristic_extractor(
+    settings: Settings,
+):
     updated = settings.model_copy(update={"llm_provider": "groq"})
 
     extractor = build_claim_extractor(updated, ExplodingGenerator())
 
     assert isinstance(extractor, HeuristicClaimExtractor)
+    assert extractor.method == "heuristic"
     result = extractor.extract("The policy requires annual reviews.")
     assert [claim.claim for claim in result.claims] == [
         "The policy requires annual reviews."
     ]
+
+
+def test_build_claim_extractor_enforces_the_hard_claim_cap(
+    settings: Settings,
+):
+    updated = settings.model_copy(
+        update={"verification_max_extracted_claims": 100}
+    )
+
+    extractor = build_claim_extractor(updated)
+
+    assert isinstance(extractor, HeuristicClaimExtractor)
+    assert extractor._max_claims == 30
+
+
+def test_extractor_groups_dependent_items_under_an_intro():
+    answer = (
+        "For each identified risk, the organization:\n"
+        "- assesses the potential consequences of the risk.\n"
+        "- evaluates the realistic likelihood of the risk occurring.\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert len(result.claims) == 1
+    claim = result.claims[0]
+    assert claim.claim == answer.strip()
+    assert answer[claim.claim_start : claim.claim_end] == claim.claim
+    assert claim.evaluable is True
+    assert claim.hypothesis.startswith(
+        "For each identified risk, the organization assesses"
+    )
+
+
+def test_extractor_does_not_group_independent_list_items():
+    answer = (
+        "The organization must:\n"
+        "- The organization identifies the risk owners.\n"
+        "- The organization documents the risk criteria.\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        "The organization identifies the risk owners.",
+        "The organization documents the risk criteria.",
+    ]
+
+
+def test_extractor_does_not_group_a_standalone_heading():
+    answer = (
+        "Risk assessment\n"
+        "- assesses the potential consequences of the risk.\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert result.claims
+    assert all(
+        not claim.claim.startswith("Risk assessment") for claim in result.claims
+    )
+
+
+def test_extractor_skips_meta_commentary_about_missing_evidence():
+    answer = (
+        "The evidence does not provide the annual review frequency.\n"
+        "The uploaded documents do not contain a retention period.\n"
+        "It only outlines the required elements.\n"
+        "The policy requires annual reviews.\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        "The policy requires annual reviews."
+    ]
+    assert len(result.skipped) == 3
+    assert all(
+        "comments on the available evidence" in fragment.reason
+        for fragment in result.skipped
+    )
+
+
+def test_extractor_handles_blockquotes_as_narrative_text():
+    answer = (
+        "> The policy requires annual reviews.\n"
+        "> - The policy requires daily audits.\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        "The policy requires annual reviews.",
+        "The policy requires daily audits.",
+    ]
+    for claim in result.claims:
+        assert answer[claim.claim_start : claim.claim_end] == claim.claim
+
+
+def test_extractor_prefers_a_more_complete_containing_claim():
+    shorter_first = (
+        "The policy requires annual reviews. "
+        "The policy requires annual reviews for all staff."
+    )
+    longer_first = (
+        "The policy requires annual reviews for all staff. "
+        "The policy requires annual reviews."
+    )
+
+    for answer in (shorter_first, longer_first):
+        result = HeuristicClaimExtractor().extract(answer)
+        assert [claim.claim for claim in result.claims] == [
+            "The policy requires annual reviews for all staff."
+        ]
+
+
+def test_extractor_caps_answers_at_thirty_claims():
+    answer = " ".join(
+        f"Policy {index} requires annual reviews." for index in range(40)
+    )
+
+    result = HeuristicClaimExtractor(max_claims=100).extract(answer)
+
+    assert len(result.claims) == 30
+    assert any("limit of 30 claims" in warning for warning in result.warnings)
+
+
+def test_iso_risk_answer_extracts_only_complete_claims():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    assert [claim.claim for claim in result.claims] == [
+        "The organization must establish and maintain risk criteria",
+        "Risk acceptance criteria: The level of risk the organization is "
+        "willing to tolerate.",
+        "The organization must identify the risk owners.",
+        "The organization must analyze the risks.",
+        "Risk evaluation: The organization must compare risk analysis "
+        "results with the risk criteria.",
+        "If a risk exceeds the 5% tolerance, the organization must treat "
+        "the risk.",
+        "The organization must not accept a risk without documented "
+        "approval.",
+        "The organization must identify the risk owners, and the organization "
+        "must document the risk criteria.",
+    ]
+    assert all(
+        "must risk owners" not in claim.claim
+        and "must risk-acceptance criteria" not in claim.claim
+        for claim in result.claims
+    )
+
+
+def test_iso_risk_answer_skips_labels_and_introductory_text():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    skipped = {fragment.text: fragment.reason for fragment in result.skipped}
+    assert "Risk assessment" in skipped
+    assert "Risk criteria" in skipped
+    assert "Risk-acceptance criteria" in skipped
+    assert "Risk owners" in skipped
+    assert "Risk analysis" in skipped
+    assert "Risk assessment" not in {claim.claim for claim in result.claims}
+    assert "Risk criteria" not in {claim.hypothesis for claim in result.claims}
+    assert (
+        "The organization must establish and maintain risk criteria"
+        in {claim.claim for claim in result.claims}
+    )
+    assert "The organization must establish and maintain risk criteria that include:" not in skipped
+
+
+def test_iso_risk_answer_marks_dependent_nominal_fragment_unevaluable():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    assert not any(
+        claim.claim
+        == "The level of risk the organization is willing to tolerate."
+        for claim in result.claims
+    )
+    assert any(
+        fragment.text
+        == "The level of risk the organization is willing to tolerate."
+        for fragment in result.skipped
+    )
+
+
+def test_iso_risk_answer_reconstructs_label_definition_bullet():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    claim = next(
+        claim
+        for claim in result.claims
+        if claim.claim.startswith("Risk acceptance criteria:")
+    )
+    assert claim.hypothesis == (
+        "Risk acceptance criteria define the level of risk the organization "
+        "is willing to tolerate."
+    )
+    assert claim.context == "Risk acceptance criteria"
+    assert claim.evaluable is True
+
+
+def test_iso_risk_answer_preserves_condition_quantity_and_negation():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    hypotheses = {claim.hypothesis for claim in result.claims}
+    assert (
+        "If a risk exceeds the 5% tolerance, the organization must treat "
+        "the risk."
+    ) in hypotheses
+    assert (
+        "The organization must not accept a risk without documented approval."
+    ) in hypotheses
+
+
+def test_iso_risk_answer_splits_compound_assertions():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    assert (
+        "The organization must identify the risk owners."
+        in {claim.claim for claim in result.claims}
+    )
+    assert (
+        "The organization must identify the risk owners, and the organization "
+        "must document the risk criteria."
+        in {claim.claim for claim in result.claims}
+    )
+    assert (
+        "the organization must document the risk criteria."
+        not in {claim.claim for claim in result.claims}
+    )
+
+
+def test_extractor_uses_markdown_table_cells_as_claims():
+    answer = (
+        "| Control | Description |\n"
+        "| --- | --- |\n"
+        "| Access control | Limits access to information. |\n"
+        "| Monitoring | The organization monitors access attempts. |\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert [claim.claim for claim in result.claims] == [
+        "Limits access to information.",
+        "The organization monitors access attempts.",
+    ]
+    assert [claim.hypothesis for claim in result.claims] == [
+        "Access control limits access to information.",
+        "The organization monitors access attempts.",
+    ]
+    assert all(claim.evaluable for claim in result.claims)
+
+
+def test_extractor_does_not_turn_table_fragments_into_claims():
+    answer = (
+        "| Item | Detail |\n"
+        "| --- | --- |\n"
+        "| Review | Annual. |\n"
+    )
+
+    result = HeuristicClaimExtractor().extract(answer)
+
+    assert result.claims == ()
+    assert any(fragment.text == "Annual." for fragment in result.skipped)
+
+
+def test_iso_risk_answer_does_not_extract_section_headings_as_claims():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    claim_texts = {claim.claim for claim in result.claims}
+    assert "Risk criteria" not in claim_texts
+    assert "Risk owners" not in claim_texts
+    assert "Risk analysis" not in claim_texts
+    assert "The organization must establish and maintain risk criteria that include" not in claim_texts
+
+
+def test_iso_risk_answer_has_no_duplicate_claims_and_reports_skips():
+    result = HeuristicClaimExtractor().extract(ISO_RISK_ANSWER)
+
+    assert len(result.claims) == 8
+    assert len(result.skipped) == 6
+    assert len({claim.hypothesis for claim in result.claims}) == 8
+    assert not any(
+        "duplicates an earlier claim" in fragment.reason
+        for fragment in result.skipped
+    )

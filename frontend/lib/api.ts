@@ -7,6 +7,9 @@ import type {
   HealthResponse,
   RagQueryRequest,
   RagQueryResponse,
+  RepairResult,
+  RepairRunRequest,
+  RepairSourceResponse,
   SearchRequest,
   SearchResponse,
   UploadResponse,
@@ -221,6 +224,54 @@ export function checkHallucinations(
     "/api/hallucination/check",
     jsonInit("POST", payload),
     RAG_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function getHallucinationResult(
+  resultId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<HallucinationCheckResponse> {
+  return request<HallucinationCheckResponse>(
+    `/api/hallucination/results/${encodeURIComponent(resultId)}`,
+    {},
+    DEFAULT_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function getRepairSource(
+  resultId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RepairSourceResponse> {
+  return request<RepairSourceResponse>(
+    `/api/repair/source/${encodeURIComponent(resultId)}`,
+    {},
+    RAG_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function runRepair(
+  payload: RepairRunRequest,
+  options: { signal?: AbortSignal } = {},
+): Promise<RepairResult> {
+  return request<RepairResult>(
+    "/api/repair/run",
+    jsonInit("POST", payload),
+    RAG_TIMEOUT_MS,
+    options.signal,
+  );
+}
+
+export function getRepairResult(
+  resultId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RepairResult> {
+  return request<RepairResult>(
+    `/api/repair/results/${encodeURIComponent(resultId)}`,
+    {},
+    DEFAULT_TIMEOUT_MS,
     options.signal,
   );
 }

@@ -202,6 +202,27 @@ def test_no_evidence_yields_insufficient_claim_status(
     assert result.summary.evidence_passed == 0
 
 
+def test_summary_separates_valid_claims_and_skipped_fragments(
+    settings: Settings, query_language_detector: QueryLanguageDetector
+):
+    answer = (
+        "Risk criteria\n"
+        "For each identified risk the organization:\n"
+        "The organization must risk owners.\n"
+        "The organization must identify the risk owners.\n"
+    )
+    engine = _engine(settings, query_language_detector)
+
+    result = engine.verify(answer, _evidence("The organization identifies risk owners."))
+
+    assert result.summary.valid_claims_extracted == 1
+    assert result.summary.invalid_fragments_skipped == 3
+    assert result.summary.valid_claims_evaluated == 1
+    assert result.summary.claims_total == 1
+    assert result.summary.supported == 1
+    assert result.summary.claims_supported_by_nli == 1
+
+
 def test_ner_failure_is_isolated_and_verification_continues(
     settings: Settings, query_language_detector: QueryLanguageDetector
 ):
@@ -594,7 +615,7 @@ def test_single_moderate_overlap_support_still_counts(
     assert claim.matched_evidence[0].counts_for_verdict is True
 
 
-def test_anaphoric_claim_is_evaluated_with_the_raw_claim_fallback(
+def test_anaphoric_claim_is_excluded_from_verification(
     settings: Settings, query_language_detector: QueryLanguageDetector
 ):
     nli = FakeNliModel(default=prediction("entailment", 0.99))
@@ -611,19 +632,63 @@ def test_anaphoric_claim_is_evaluated_with_the_raw_claim_fallback(
     )
 
     claim = result.claims[0]
-    assert claim.status == "supported"
-    assert claim.diagnostic_status is None
+    assert claim.status is None
+    assert claim.diagnostic_status == "unevaluable"
     assert claim.claim.evaluable is False
-    assert claim.pairs_expected == 1
-    assert claim.pairs_evaluated == 1
-    assert len(claim.matched_evidence) == 1
-    assert len(nli.calls) == 1
+    assert claim.pairs_expected == 0
+    assert claim.pairs_evaluated == 0
+    assert claim.matched_evidence == []
+    assert nli.calls == []
     assert result.summary.claims_total == 1
-    assert result.summary.claims_evaluable == 1
-    assert result.summary.claims_unevaluable == 0
-    assert result.summary.unevaluable == 0
-    assert result.summary.pairs_expected == 1
+    assert result.summary.claims_evaluable == 0
+    assert result.summary.claims_unevaluable == 1
+    assert result.summary.claims_checked == 0
+    assert result.summary.unevaluable == 1
+    assert result.summary.pairs_expected == 0
+    assert result.summary.pairs_evaluated == 0
+    assert result.summary.claims_incomplete == 0
     assert result.status == "completed"
+
+
+def test_mixed_evaluable_and_unevaluable_claims_report_evaluable_statistics(
+    settings: Settings, query_language_detector: QueryLanguageDetector
+):
+    nli = FakeNliModel(default=prediction("entailment", 0.99))
+    engine = _engine(
+        settings,
+        query_language_detector,
+        nli_model=nli,
+        matcher=FixedMatcher([0.99]),
+    )
+
+    result = engine.verify(
+        "It does this by applying a risk management process. "
+        "The organization must identify the risk owners.",
+        [
+            VerificationEvidenceInput(
+                text="The organization identifies the risk owners.",
+                evidence_id="e1",
+            )
+        ],
+    )
+
+    assert [claim.claim.evaluable for claim in result.claims] == [False, True]
+    assert [claim.status for claim in result.claims] == [None, "supported"]
+    assert result.claims[0].diagnostic_status == "unevaluable"
+    assert result.claims[1].pairs_evaluated == 1
+    assert len(nli.calls) == 1
+    assert result.summary.claims_total == 2
+    assert result.summary.claims_evaluable == 1
+    assert result.summary.claims_unevaluable == 1
+    assert result.summary.claims_checked == 1
+    assert result.summary.claims_complete == 1
+    assert result.summary.claims_incomplete == 0
+    assert result.summary.supported == 1
+    assert result.summary.contradicted == 0
+    assert result.summary.neutral == 0
+    assert result.summary.unevaluable == 1
+    assert result.summary.pairs_expected == 1
+    assert result.summary.pairs_evaluated == 1
 
 
 def test_pair_exposes_full_nli_inputs_scores_and_token_accounting(
@@ -1380,4 +1445,3 @@ def test_claim_term_coverage_handles_common_morphological_variants():
         "Risk assessments and treatment plans",
         "The risk assessment and treatment planning process",
     ) >= 0.5
-

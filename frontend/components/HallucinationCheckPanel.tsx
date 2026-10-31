@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Eye,
   Quote,
   ShieldCheck,
   Sparkles,
@@ -13,7 +12,12 @@ import {
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { ApiError, RequestCancelledError, checkHallucinations } from "@/lib/api";
+import {
+  ApiError,
+  RequestCancelledError,
+  checkHallucinations,
+  getHallucinationResult,
+} from "@/lib/api";
 import {
   claimVerificationStatusLabel,
   claimVerificationStatusTone,
@@ -86,6 +90,136 @@ function Probability({ value }: { value: number }) {
   return <span className="mono">{(value * 100).toFixed(1)}%</span>;
 }
 
+export interface HallucinationVerdictLegendItem {
+  verdict: HallucinationVerdict;
+  label: string;
+  modelLabel: string;
+}
+
+export function buildVerdictLegend(): HallucinationVerdictLegendItem[] {
+  return [
+    {
+      verdict: "supported",
+      label: "Supported",
+      modelLabel: "SUPPORTED",
+    },
+    {
+      verdict: "potentially_hallucinated",
+      label: "Potentially hallucinated",
+      modelLabel: "UNSUPPORTED",
+    },
+  ];
+}
+
+export function HallucinationVerdictLegend() {
+  return (
+    <div
+      className="hallucination-verdict-legend"
+      aria-label="Hallucination Guard verdict mapping"
+    >
+      <span className="muted">Hallucination Guard</span>
+      {buildVerdictLegend().map((item) => (
+        <span key={item.verdict} className="hallucination-verdict-legend-item">
+          <span className="mono">{item.modelLabel}</span>
+          <span aria-hidden="true">→</span>
+          <StatusBadge tone={hallucinationVerdictTone(item.verdict)}>
+            {item.label}
+          </StatusBadge>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function HallucinationHighlightedAnswer({
+  answer,
+  check,
+  selectedClaimId: controlledClaimId,
+  onSelectedClaimIdChange,
+}: {
+  answer: string;
+  check: HallucinationCheckResponse;
+  selectedClaimId?: string | null;
+  onSelectedClaimIdChange?: (claimId: string) => void;
+}) {
+  const [internalClaimId, setInternalClaimId] = useState<string | null>(
+    check.claims[0]?.claim_id ?? null,
+  );
+  const selectedClaimId =
+    controlledClaimId !== undefined ? controlledClaimId : internalClaimId;
+  const selectClaim = (claimId: string) => {
+    if (onSelectedClaimIdChange) {
+      onSelectedClaimIdChange(claimId);
+    } else {
+      setInternalClaimId(claimId);
+    }
+  };
+  const segments = buildHighlightSegments(answer, check.claims);
+  const selected =
+    check.claims.find((claim) => claim.claim_id === selectedClaimId) ?? null;
+
+  return (
+    <section className="card">
+      <div className="card-header">
+        <div>
+          <h2>Answer with claim highlights</h2>
+          <p className="section-description">
+            Hover, focus, or select a highlighted claim to inspect its result.
+          </p>
+        </div>
+      </div>
+      <div className="answer">
+        <p className="answer-text answer-highlight-text">
+          {segments.map((segment, index) =>
+            segment.claim ? (
+              <button
+                key={`${segment.claim.claim_id}-${index}`}
+                type="button"
+                className={`${verdictClass(segment.claim.verdict)}${
+                  segment.claim.claim_id === selectedClaimId
+                    ? " hallucination-mark-selected"
+                    : ""
+                }`}
+                onMouseEnter={() => selectClaim(segment.claim!.claim_id)}
+                onFocus={() => selectClaim(segment.claim!.claim_id)}
+                onClick={() => selectClaim(segment.claim!.claim_id)}
+              >
+                {segment.text}
+              </button>
+            ) : (
+              <span key={`gap-${index}`}>{segment.text}</span>
+            ),
+          )}
+        </p>
+      </div>
+
+      {selected && (
+        <div className="hallucination-inspector">
+          <div className="hallucination-inspector-head">
+            <StatusBadge tone={hallucinationVerdictTone(selected.verdict)}>
+              {hallucinationVerdictLabel(selected.verdict)}
+            </StatusBadge>
+            <span className="muted">
+              support <Probability value={selected.support_probability} /> · raw{" "}
+              <span className="mono">{selected.raw_model_label}</span>
+            </span>
+          </div>
+          <p>{selected.claim}</p>
+          <p className="muted">{selected.explanation}</p>
+          {selected.evidence[0] && (
+            <p className="muted">
+              Best evidence: {selected.evidence[0].filename}
+              {selected.evidence[0].page_number != null
+                ? `, page ${selected.evidence[0].page_number}`
+                : ""}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function HallucinationResultView({
   answer,
   check,
@@ -97,9 +231,6 @@ export function HallucinationResultView({
     check.claims[0]?.claim_id ?? null,
   );
   const [expandedClaimId, setExpandedClaimId] = useState<string | null>(null);
-  const segments = buildHighlightSegments(answer, check.claims);
-  const selected =
-    check.claims.find((claim) => claim.claim_id === selectedClaimId) ?? null;
 
   return (
     <>
@@ -141,16 +272,6 @@ export function HallucinationResultView({
           </div>
           <div className="stat-card">
             <div className="stat-head">
-              <span className="stat-icon stat-icon-warning">
-                <Eye size={16} aria-hidden="true" />
-              </span>
-              <span className="stat-label">Needs review</span>
-            </div>
-            <p className="stat-value">{check.summary.needs_review}</p>
-            <p className="stat-hint">Near the model decision boundary</p>
-          </div>
-          <div className="stat-card">
-            <div className="stat-head">
               <span className="stat-icon stat-icon-info">
                 <ShieldCheck size={16} aria-hidden="true" />
               </span>
@@ -162,10 +283,10 @@ export function HallucinationResultView({
         </div>
 
         <p className="note">
-          The dedicated model is binary. “Potentially hallucinated” means the
-          claim was not supported by the supplied evidence; it does not prove a
-          contradiction. Support threshold {check.support_threshold.toFixed(2)},
-          review band ±{check.review_margin.toFixed(2)}.
+          The dedicated model is binary. Verdicts map the model&apos;s
+          SUPPORTED label to Supported and UNSUPPORTED to Potentially
+          hallucinated. “Potentially hallucinated” means the claim was not
+          supported by the supplied evidence; it does not prove a contradiction.
         </p>
         <p className="muted">
           {check.summary.pairs_evaluated} comparison(s) across{" "}
@@ -174,64 +295,12 @@ export function HallucinationResultView({
         </p>
       </section>
 
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <h2>Answer with claim highlights</h2>
-            <p className="section-description">
-              Hover, focus, or select a highlighted claim to inspect its result.
-            </p>
-          </div>
-        </div>
-        <div className="answer">
-          <p className="answer-text answer-highlight-text">
-            {segments.map((segment, index) =>
-              segment.claim ? (
-                <button
-                  key={`${segment.claim.claim_id}-${index}`}
-                  type="button"
-                  className={`${verdictClass(segment.claim.verdict)}${
-                    segment.claim.claim_id === selectedClaimId
-                      ? " hallucination-mark-selected"
-                      : ""
-                  }`}
-                  onMouseEnter={() => setSelectedClaimId(segment.claim!.claim_id)}
-                  onFocus={() => setSelectedClaimId(segment.claim!.claim_id)}
-                  onClick={() => setSelectedClaimId(segment.claim!.claim_id)}
-                >
-                  {segment.text}
-                </button>
-              ) : (
-                <span key={`gap-${index}`}>{segment.text}</span>
-              ),
-            )}
-          </p>
-        </div>
-
-        {selected && (
-          <div className="hallucination-inspector">
-            <div className="hallucination-inspector-head">
-              <StatusBadge tone={hallucinationVerdictTone(selected.verdict)}>
-                {hallucinationVerdictLabel(selected.verdict)}
-              </StatusBadge>
-              <span className="muted">
-                support <Probability value={selected.support_probability} /> · raw{" "}
-                <span className="mono">{selected.raw_model_label}</span>
-              </span>
-            </div>
-            <p>{selected.claim}</p>
-            <p className="muted">{selected.explanation}</p>
-            {selected.evidence[0] && (
-              <p className="muted">
-                Best evidence: {selected.evidence[0].filename}
-                {selected.evidence[0].page_number != null
-                  ? `, page ${selected.evidence[0].page_number}`
-                  : ""}
-              </p>
-            )}
-          </div>
-        )}
-      </section>
+      <HallucinationHighlightedAnswer
+        answer={answer}
+        check={check}
+        selectedClaimId={selectedClaimId}
+        onSelectedClaimIdChange={setSelectedClaimId}
+      />
 
       <section className="card">
         <div className="card-header">
@@ -243,6 +312,8 @@ export function HallucinationResultView({
             </p>
           </div>
         </div>
+
+        <HallucinationVerdictLegend />
 
         <div className="table-wrap">
           <table className="table">
@@ -278,9 +349,19 @@ export function HallucinationResultView({
         {check.claims.length === 0 && (
           <p className="muted">No factual claims were extracted from the answer.</p>
         )}
-        {check.warnings.length > 0 && (
+        {check.warnings.filter(
+          (warning) =>
+            !warning.endsWith(
+              "heading or incomplete fragment(s) were excluded from Hallucination Guard verification.",
+            ),
+        ).length > 0 && (
           <div className="stack" style={{ marginTop: 12 }}>
-            {check.warnings.map((warning) => (
+            {check.warnings.filter(
+              (warning) =>
+                !warning.endsWith(
+                  "heading or incomplete fragment(s) were excluded from Hallucination Guard verification.",
+                ),
+            ).map((warning) => (
               <ProcessingStatus
                 key={warning}
                 status="warning"
@@ -325,7 +406,9 @@ function ClaimRows({
         </td>
         <td>
           <Probability value={claim.support_probability} />
-          <div className="muted mono">{claim.raw_model_label}</div>
+          <div className="muted mono hallucination-support-label">
+            SUPPORTED
+          </div>
         </td>
         <td>
           {claim.nli_status ? (
@@ -459,16 +542,58 @@ export default function HallucinationCheckPanel() {
   const [error, setError] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const restoreAbortRef = useRef<AbortController | null>(null);
   const checkInFlightRef = useRef(false);
 
   useEffect(() => {
     abortRef.current?.abort();
+    restoreAbortRef.current?.abort();
     abortRef.current = null;
+    restoreAbortRef.current = null;
     checkInFlightRef.current = false;
     setLoading(false);
     setCheck(null);
     setError(null);
     setCancelled(false);
+
+    const resultId = latestRagResult?.result_id;
+    if (!resultId) {
+      return;
+    }
+    const controller = new AbortController();
+    restoreAbortRef.current = controller;
+    void getHallucinationResult(resultId, { signal: controller.signal })
+      .then((response) => {
+        if (restoreAbortRef.current === controller) {
+          setCheck(response);
+        }
+      })
+      .catch((caught: unknown) => {
+        if (
+          restoreAbortRef.current !== controller ||
+          caught instanceof RequestCancelledError ||
+          (caught instanceof ApiError && caught.status === 404)
+        ) {
+          return;
+        }
+        setError(
+          caught instanceof ApiError
+            ? caught.message
+            : "The saved Hallucination Checks result could not be restored.",
+        );
+      })
+      .finally(() => {
+        if (restoreAbortRef.current === controller) {
+          restoreAbortRef.current = null;
+        }
+      });
+
+    return () => {
+      controller.abort();
+      if (restoreAbortRef.current === controller) {
+        restoreAbortRef.current = null;
+      }
+    };
   }, [latestRagResult?.result_id]);
 
   useEffect(

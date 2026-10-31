@@ -195,6 +195,7 @@ export interface VerifiedClaim {
   incomplete_reason?: string | null;
   entities?: VerificationNamedEntity[];
   extraction_method: string;
+  location_status?: "verified" | "location_unresolved";
   warnings?: string[];
 }
 
@@ -297,6 +298,13 @@ export interface ClaimVerificationResult {
 }
 
 export interface VerificationSummary {
+  valid_claims_extracted?: number;
+  invalid_fragments_skipped?: number;
+  claims_location_unresolved?: number;
+  valid_claims_evaluated?: number;
+  claims_supported_by_nli?: number;
+  claims_contradicted_by_nli?: number;
+  claims_neutral_nli?: number;
   claims_total: number;
   claims_evaluable?: number;
   claims_unevaluable?: number;
@@ -417,8 +425,7 @@ export interface RagQueryResponse {
 
 export type HallucinationVerdict =
   | "supported"
-  | "potentially_hallucinated"
-  | "needs_review";
+  | "potentially_hallucinated";
 
 export interface HallucinationCheckRequest {
   result_id: string;
@@ -458,7 +465,6 @@ export interface HallucinationSummary {
   claims_total: number;
   supported: number;
   potentially_hallucinated: number;
-  needs_review: number;
   nli_disagreements: number;
   evidence_total: number;
   pairs_evaluated: number;
@@ -480,4 +486,172 @@ export interface HallucinationCheckResponse {
     total_ms: number;
   };
   warnings: string[];
+}
+
+export type RepairDecision =
+  | "REPAIRED"
+  | "QUALIFIED"
+  | "REMOVED"
+  | "INSUFFICIENT_EVIDENCE";
+
+export type RepairClaimStatus =
+  | "ORIGINAL"
+  | "REPAIRING"
+  | "REPAIRED_PENDING_VERIFICATION"
+  | "VERIFIED"
+  | "RETRY_REQUIRED"
+  | "UNRESOLVED"
+  | "REMOVED"
+  | "INSUFFICIENT_EVIDENCE"
+  | "REPAIR_ERROR";
+
+export type RepairOverallStatus =
+  | "FULLY_VERIFIED"
+  | "PARTIALLY_VERIFIED"
+  | "REPAIR_INCOMPLETE"
+  | "NO_REPAIR_NEEDED";
+
+export type FinalClaimVerdict =
+  | "verified"
+  | "unresolved"
+  | "insufficient_evidence";
+
+export interface RepairEvidence {
+  evidence_id: string;
+  document_id: string;
+  filename: string;
+  chunk_id: string;
+  chunk_index: number;
+  page_number: number | null;
+  text: string;
+  retrieval_score: number;
+  retrieval_similarity: number;
+  guard_support_probability: number;
+  guard_raw_label: string;
+}
+
+export interface RepairSupportingEvidence {
+  source: string;
+  page: number | null;
+  evidence_quote: string;
+}
+
+export interface RepairVerification {
+  nli_status: ClaimVerdict | null;
+  nli_confidence: number | null;
+  nli_explanation: string | null;
+  guard_verdict: HallucinationVerdict | null;
+  guard_support_probability: number | null;
+  guard_raw_label: string | null;
+  both_supported: boolean;
+}
+
+export interface RepairAttempt {
+  attempt_number: number;
+  status: RepairClaimStatus;
+  decision: RepairDecision | null;
+  repaired_claim: string | null;
+  reason: string | null;
+  supporting_evidence: RepairSupportingEvidence[];
+  verification: RepairVerification | null;
+  failure_reason: string | null;
+  error: string | null;
+  duration_ms: number;
+}
+
+export interface RepairIteration {
+  iteration_number: number;
+  submitted_claim_ids: string[];
+  verified_claim_ids: string[];
+  remaining_claim_ids: string[];
+  status: "COMPLETED" | "PARTIALLY_COMPLETED" | "FAILED";
+}
+
+export interface RepairClaimResult {
+  claim_id: string;
+  requires_repair: boolean;
+  original_claim: string;
+  original_sentence: string;
+  original_context: string | null;
+  original_claim_start: number;
+  original_claim_end: number;
+  original_verdict: HallucinationVerdict;
+  original_support_probability: number;
+  original_raw_model_label: string;
+  original_nli_status: ClaimVerdict | null;
+  original_nli_confidence: number | null;
+  original_nli_disagrees: boolean;
+  status: RepairClaimStatus;
+  attempts: RepairAttempt[];
+  selected_evidence: RepairEvidence[];
+  final_claim: string | null;
+  final_decision: RepairDecision | null;
+  included_in_final: boolean;
+}
+
+export interface FinalAnswerClaim {
+  claim_id: string;
+  text: string;
+  start: number;
+  end: number;
+  verdict: FinalClaimVerdict;
+}
+
+export interface RepairOmission {
+  claim_id: string;
+  original_claim: string;
+  reason: string;
+}
+
+export interface RepairOverview {
+  claims_total: number;
+  supported: number;
+  potentially_hallucinated: number;
+  neutral: number;
+  nli_disagreements: number;
+  claims_unevaluable: number;
+  invalid_fragments_skipped: number;
+  evidence_total: number;
+}
+
+export interface RepairTimings {
+  preparation_ms: number;
+  repair_ms: number;
+  total_ms: number;
+}
+
+export interface RepairResult {
+  repair_id: string;
+  result_id: string;
+  question: string;
+  original_answer: string;
+  original_verification: RagVerificationInfo;
+  hallucination_check: HallucinationCheckResponse;
+  overview: RepairOverview;
+  claims: RepairClaimResult[];
+  final_answer: string;
+  final_claims: FinalAnswerClaim[];
+  omissions: RepairOmission[];
+  iterations: RepairIteration[];
+  status: RepairOverallStatus;
+  max_attempts: 3;
+  model_provider: string | null;
+  model_name: string | null;
+  created_at: string;
+  timings: RepairTimings;
+  warnings: string[];
+}
+
+export interface RepairSourceResponse {
+  result_id: string;
+  original: RagQueryResponse;
+  hallucination: HallucinationCheckResponse;
+  overview: RepairOverview;
+  repair: RepairResult | null;
+  max_attempts: number;
+}
+
+export interface RepairRunRequest {
+  result_id: string;
+  max_attempts?: 3;
 }

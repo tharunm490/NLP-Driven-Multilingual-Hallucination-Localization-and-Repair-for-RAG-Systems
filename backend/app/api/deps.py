@@ -22,7 +22,14 @@ from app.services.hallucination_detector import (
     HallucinationDetector,
     build_hallucination_detector,
 )
-from app.services.hallucination_service import HallucinationCheckService
+from app.services.hallucination_repair_service import (
+    HallucinationRepairService,
+    build_hallucination_repair_service,
+)
+from app.services.hallucination_service import (
+    HallucinationCheckService,
+    build_hallucination_check_service,
+)
 from app.services.ingestion_service import IngestionService
 from app.services.language_detection import LanguageDetector
 from app.services.prompt_builder import PromptBuilder
@@ -158,9 +165,21 @@ def get_hallucination_detector() -> HallucinationDetector:
 
 @lru_cache(maxsize=1)
 def get_hallucination_check_service() -> HallucinationCheckService:
-    return HallucinationCheckService(
+    return build_hallucination_check_service(
+        get_settings(), get_generator(), get_query_language_detector()
+    )
+
+
+@lru_cache(maxsize=1)
+def get_hallucination_repair_service() -> HallucinationRepairService:
+    hallucination_service = get_hallucination_check_service()
+    return build_hallucination_repair_service(
         settings=get_settings(),
-        detector=get_hallucination_detector(),
+        verification_engine=get_verification_engine(),
+        rag_verification_service=get_rag_verification_service(),
+        hallucination_service=hallucination_service,
+        detector=hallucination_service.detector,
+        generator=get_generator(),
     )
 
 

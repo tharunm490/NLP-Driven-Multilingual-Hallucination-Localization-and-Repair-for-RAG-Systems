@@ -222,7 +222,7 @@ def engine_benchmark_configs(
         EngineBenchmarkConfig(
             config_id="unbatched-exhaustive",
             max_claims=20,
-            max_extracted_claims=64,
+            max_extracted_claims=30,
             max_evidence_per_claim=50,
             max_nli_pairs=250,
             primary_window_tokens=192,
@@ -236,7 +236,7 @@ def engine_benchmark_configs(
         EngineBenchmarkConfig(
             config_id="batched-exhaustive",
             max_claims=20,
-            max_extracted_claims=64,
+            max_extracted_claims=30,
             max_evidence_per_claim=50,
             max_nli_pairs=250,
             primary_window_tokens=192,
@@ -250,7 +250,7 @@ def engine_benchmark_configs(
         EngineBenchmarkConfig(
             config_id="legacy-8x2-12pair",
             max_claims=8,
-            max_extracted_claims=64,
+            max_extracted_claims=30,
             max_evidence_per_claim=2,
             max_nli_pairs=12,
             primary_window_tokens=192,
@@ -268,7 +268,7 @@ def engine_benchmark_configs(
                 EngineBenchmarkConfig(
                     config_id="onnx-batched-exhaustive",
                     max_claims=20,
-                    max_extracted_claims=64,
+                    max_extracted_claims=30,
                     max_evidence_per_claim=50,
                     max_nli_pairs=250,
                     primary_window_tokens=192,
@@ -283,7 +283,7 @@ def engine_benchmark_configs(
                 EngineBenchmarkConfig(
                     config_id="onnx-legacy-8x2-12pair",
                     max_claims=8,
-                    max_extracted_claims=64,
+                    max_extracted_claims=30,
                     max_evidence_per_claim=2,
                     max_nli_pairs=12,
                     primary_window_tokens=192,

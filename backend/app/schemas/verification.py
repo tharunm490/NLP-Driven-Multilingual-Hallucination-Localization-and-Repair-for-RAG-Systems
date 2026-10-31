@@ -14,6 +14,7 @@ NliLabel = Literal["entailment", "contradiction", "neutral"]
 ClaimVerdict = Literal["supported", "contradicted", "neutral"]
 ClaimVerificationStatus = ClaimVerdict
 ClaimDiagnosticStatus = Literal["unevaluable", "verification_error"]
+ClaimLocationStatus = Literal["verified", "location_unresolved"]
 VerificationRunStatus = Literal["disabled", "completed", "partial", "error"]
 ComparisonRelevance = Literal[
     "relevant",
@@ -81,6 +82,7 @@ class ExtractedClaim(BaseModel):
     language: DetectedLanguage
     entities: list[NamedEntity] = Field(default_factory=list)
     extraction_method: str
+    location_status: ClaimLocationStatus = "verified"
     warnings: list[str] = Field(default_factory=list)
 
     @field_validator("hypothesis")
@@ -178,6 +180,13 @@ class ClaimVerificationResult(BaseModel):
 
 
 class VerificationSummary(BaseModel):
+    valid_claims_extracted: int = 0
+    invalid_fragments_skipped: int = 0
+    claims_location_unresolved: int = 0
+    valid_claims_evaluated: int = 0
+    claims_supported_by_nli: int = 0
+    claims_contradicted_by_nli: int = 0
+    claims_neutral_nli: int = 0
     claims_total: int = 0
     claims_evaluable: int = 0
     claims_unevaluable: int = 0
@@ -249,4 +258,3 @@ class VerificationCheckRequest(BaseModel):
         if not value.strip():
             raise ValueError("answer must not be blank")
         return value
-

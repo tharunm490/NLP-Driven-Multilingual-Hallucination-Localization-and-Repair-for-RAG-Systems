@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   buildHighlightSegments,
+  buildVerdictLegend,
   HallucinationResultView,
 } from "../components/HallucinationCheckPanel";
 import {
@@ -56,7 +57,7 @@ function claim(
           verdict === "supported" ? "SUPPORTED" : "UNSUPPORTED",
       },
     ],
-    nli_status: index === 1 ? "supported" : "supported",
+    nli_status: "supported",
     nli_confidence: 0.9,
     nli_disagrees: index === 1,
     ...overrides,
@@ -74,13 +75,12 @@ const check: HallucinationCheckResponse = {
   claims: [
     claim(0, "supported", 0.93),
     claim(1, "potentially_hallucinated", 0.12),
-    claim(2, "needs_review", 0.51),
+    claim(2, "supported", 0.51),
   ],
   summary: {
     claims_total: 3,
-    supported: 1,
+    supported: 2,
     potentially_hallucinated: 1,
-    needs_review: 1,
     nli_disagreements: 1,
     evidence_total: 3,
     pairs_evaluated: 9,
@@ -94,15 +94,13 @@ const check: HallucinationCheckResponse = {
 };
 
 describe("hallucination verdict presentation", () => {
-  test("maps labels and tones without using contradiction", () => {
+  test("maps exactly two labels and tones without using contradiction", () => {
     expect(hallucinationVerdictLabel("supported")).toBe("Supported");
     expect(hallucinationVerdictLabel("potentially_hallucinated")).toBe(
       "Potentially hallucinated",
     );
-    expect(hallucinationVerdictLabel("needs_review")).toBe("Needs review");
     expect(hallucinationVerdictTone("supported")).toBe("success");
     expect(hallucinationVerdictTone("potentially_hallucinated")).toBe("error");
-    expect(hallucinationVerdictTone("needs_review")).toBe("warning");
     expect(hallucinationVerdictLabel("potentially_hallucinated")).not.toContain(
       "contradict",
     );
@@ -121,7 +119,7 @@ describe("answer highlighting", () => {
 
   test("ignores invalid or overlapping spans", () => {
     const first = claim(0, "supported", 0.9);
-    const overlapping = claim(1, "needs_review", 0.5, {
+    const overlapping = claim(1, "potentially_hallucinated", 0.5, {
       claim_start: 2,
       claim_end: 10,
     });
@@ -139,13 +137,16 @@ describe("HallucinationResultView", () => {
 
     expect(html).toContain("Horizon-Labs/hallucination-guard-base");
     expect(html).toContain("Potentially hallucinated");
-    expect(html).toContain("Needs review");
     expect(html).toContain("NLI disagreements");
     expect(html).toContain("12.0%");
-    expect(html).toContain("UNSUPPORTED");
+    expect(html).toContain("SUPPORTED");
+    expect(html).not.toMatch(
+      /hallucination-support-label">\s*UNSUPPORTED/,
+    );
     expect(html).toContain("iso-27001.txt");
     expect(html).toContain("p.4");
     expect(html).toContain("The dedicated model is binary");
+    expect(html).not.toContain("Needs review");
     expect(html).not.toContain("Contradicted by evidence");
   });
 
@@ -158,7 +159,6 @@ describe("HallucinationResultView", () => {
         claims_total: 0,
         supported: 0,
         potentially_hallucinated: 0,
-        needs_review: 0,
         nli_disagreements: 0,
       },
     };
@@ -166,5 +166,107 @@ describe("HallucinationResultView", () => {
       <HallucinationResultView answer={ANSWER} check={empty} />,
     );
     expect(html).toContain("No factual claims were extracted");
+  });
+});
+
+describe("support score presentation and two-class verdicts", () => {
+  const supportCheck: HallucinationCheckResponse = {
+    ...check,
+    claims: [
+      claim(0, "supported", 0.939),
+      claim(1, "potentially_hallucinated", 0.159),
+      claim(2, "supported", 0.51),
+    ],
+  };
+
+  test("labels every Support column row SUPPORTED without changing scores", () => {
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={supportCheck} />,
+    );
+
+    const supportLabels = html.match(
+      /hallucination-support-label">\s*SUPPORTED\s*<\/div>/g,
+    );
+    expect(supportLabels).toHaveLength(3);
+    expect(html).not.toMatch(
+      /hallucination-support-label">\s*UNSUPPORTED/,
+    );
+    expect(html).toContain("93.9%");
+    expect(html).toContain("15.9%");
+    expect(html).not.toContain("84.1%");
+    expect(html).not.toContain("6.1%");
+  });
+
+  test("keeps the Potentially hallucinated verdict for UNSUPPORTED claims", () => {
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={supportCheck} />,
+    );
+
+    expect(html).toContain("Potentially hallucinated");
+    expect(html).toContain("15.9%");
+  });
+
+  test("keeps the Supported verdict for SUPPORTED claims", () => {
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={supportCheck} />,
+    );
+
+    expect(html).toContain(">Supported<");
+    expect(html).toContain("93.9%");
+  });
+
+  test("keeps the independent three-class NLI predictions", () => {
+    const nliCheck: HallucinationCheckResponse = {
+      ...check,
+      claims: [
+        claim(0, "supported", 0.93, { nli_status: "supported" }),
+        claim(1, "potentially_hallucinated", 0.12, {
+          nli_status: "contradicted",
+        }),
+        claim(2, "supported", 0.51, { nli_status: "neutral" }),
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={nliCheck} />,
+    );
+
+    expect(html).toContain(">Supported<");
+    expect(html).toContain(">Contradicted<");
+    expect(html).toContain(">Neutral<");
+    expect(html).toContain("Disagrees");
+  });
+
+  test("renders only the two model-class categories in the legend", () => {
+    expect(buildVerdictLegend()).toEqual([
+      {
+        verdict: "supported",
+        label: "Supported",
+        modelLabel: "SUPPORTED",
+      },
+      {
+        verdict: "potentially_hallucinated",
+        label: "Potentially hallucinated",
+        modelLabel: "UNSUPPORTED",
+      },
+    ]);
+
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={supportCheck} />,
+    );
+    expect(html).toContain("Hallucination Guard");
+    expect(html).toContain("SUPPORTED");
+    expect(html).toContain("UNSUPPORTED");
+    expect(html).not.toContain("Needs review");
+    expect(html).not.toContain("NEEDS_REVIEW");
+  });
+
+  test("does not render a review verdict or review summary card", () => {
+    const html = renderToStaticMarkup(
+      <HallucinationResultView answer={ANSWER} check={supportCheck} />,
+    );
+
+    expect(html).not.toContain("Needs review");
+    expect(html).not.toContain("needs_review");
+    expect(html).toContain("NLI disagreements");
   });
 });

@@ -255,6 +255,10 @@ class ClaimVerificationEngine:
                 nli_model=self._nli.model_name,
                 ner_model=self._ner.model_name,
                 summary=VerificationSummary(
+                    valid_claims_extracted=0,
+                    invalid_fragments_skipped=len(extraction.skipped),
+                    claims_location_unresolved=len(extraction.unresolved),
+                    valid_claims_evaluated=0,
                     evidence_passed=evidence_total,
                     evidence_total=evidence_total,
                 ),
@@ -262,8 +266,12 @@ class ClaimVerificationEngine:
                 warnings=_dedupe(warnings),
             )
 
+        evaluable_claims = [claim for claim in claims if claim.evaluable]
+        unevaluable_claims = [claim for claim in claims if not claim.evaluable]
         max_claims = max(1, self._settings.verification_max_claims)
-        selected_claims, skipped_claims = _prioritize_claims(claims, max_claims)
+        selected_claims, skipped_claims = _prioritize_claims(
+            evaluable_claims, max_claims
+        )
         states = [
             _ClaimState(claim=claim, warnings=list(claim.warnings))
             for claim in selected_claims
@@ -317,6 +325,9 @@ class ClaimVerificationEngine:
         aggregation_started = time.perf_counter()
         results = self._finalize_results(states, evidence)
         results.extend(
+            self._unevaluable_result(claim) for claim in unevaluable_claims
+        )
+        results.extend(
             self._unchecked_result(
                 claim,
                 "The claim extraction limit was reached before this claim "
@@ -325,7 +336,25 @@ class ClaimVerificationEngine:
             )
             for claim in skipped_claims
         )
-        summary = _summarize(results, evidence_total=evidence_total)
+        result_by_id = {
+            item.claim.claim_id: item for item in results
+        }
+        results = [
+            result_by_id[claim.claim_id]
+            for claim in claims
+            if claim.claim_id in result_by_id
+        ]
+        if unevaluable_claims:
+            warnings.append(
+                f"{len(unevaluable_claims)} extracted fragment(s) were skipped "
+                "because they were not independently evaluable factual claims."
+            )
+        summary = _summarize(
+            results,
+            evidence_total=evidence_total,
+            invalid_fragments_skipped=len(extraction.skipped),
+            claims_location_unresolved=len(extraction.unresolved),
+        )
         timings["aggregation_ms"] = (
             time.perf_counter() - aggregation_started
         ) * 1000
@@ -369,6 +398,18 @@ class ClaimVerificationEngine:
     ) -> ExtractedClaim:
         language = self._detect(claim.claim, fallback=answer_language)
         claim_warnings = list(claim.warnings)
+        if claim.location_status != "verified":
+            claim_warnings.append(
+                "Named-entity recognition was skipped because the claim's "
+                "location in the answer could not be verified."
+            )
+            return claim.model_copy(
+                update={
+                    "language": language,
+                    "entities": [],
+                    "warnings": claim_warnings,
+                }
+            )
         entities = []
         try:
             ner_result = self._ner.tag(claim.claim)
@@ -920,6 +961,31 @@ class ClaimVerificationEngine:
             warnings=_dedupe(claim_warnings),
         )
 
+    def _unevaluable_result(
+        self,
+        claim: ExtractedClaim,
+    ) -> ClaimVerificationResult:
+        reason = (
+            claim.incomplete_reason
+            or "The fragment was not an independently evaluable proposition."
+        )
+        return ClaimVerificationResult(
+            claim=claim,
+            status=None,
+            diagnostic_status="unevaluable",
+            explanation=(
+                "The extracted fragment was preserved for audit but was not "
+                f"sent to evidence matching or NLI: {reason}"
+            ),
+            pairs_expected=0,
+            pairs_evaluated=0,
+            complete=False,
+            incomplete_reason=reason,
+            matched_evidence=[],
+            aggregation="not_evaluable",
+            warnings=[reason],
+        )
+
     def _unchecked_result(
         self,
         claim: ExtractedClaim,
@@ -1002,7 +1068,7 @@ def build_verification_engine(
     return ClaimVerificationEngine(
         settings=settings,
         detector=detector,
-        claim_extractor=build_claim_extractor(settings),
+        claim_extractor=build_claim_extractor(settings, generator, detector),
         ner_tagger=build_ner_tagger(settings),
         matcher=build_evidence_matcher(embedder),
         nli_model=build_nli_model(settings),
@@ -1532,26 +1598,43 @@ def _run_status(
 
 
 def _summarize(
-    results: Sequence[ClaimVerificationResult], evidence_total: int
+    results: Sequence[ClaimVerificationResult],
+    evidence_total: int,
+    invalid_fragments_skipped: int = 0,
+    claims_location_unresolved: int = 0,
 ) -> VerificationSummary:
-    pairs_expected = sum(item.pairs_expected for item in results)
-    pairs_evaluated = sum(item.pairs_evaluated for item in results)
-    pairs_retried = sum(item.pairs_retried for item in results)
-    pairs_failed = sum(item.pairs_failed for item in results)
-    claims_complete = sum(item.complete for item in results)
+    evaluable = [item for item in results if item.claim.evaluable]
+    pairs_expected = sum(item.pairs_expected for item in evaluable)
+    pairs_evaluated = sum(item.pairs_evaluated for item in evaluable)
+    pairs_retried = sum(item.pairs_retried for item in evaluable)
+    pairs_failed = sum(item.pairs_failed for item in evaluable)
+    claims_complete = sum(item.complete for item in evaluable)
     return VerificationSummary(
+        valid_claims_extracted=len(evaluable),
+        invalid_fragments_skipped=invalid_fragments_skipped,
+        claims_location_unresolved=claims_location_unresolved,
+        valid_claims_evaluated=sum(item.pairs_evaluated > 0 for item in evaluable),
+        claims_supported_by_nli=sum(
+            item.label == "entailment" for item in evaluable
+        ),
+        claims_contradicted_by_nli=sum(
+            item.label == "contradiction" for item in evaluable
+        ),
+        claims_neutral_nli=sum(item.label == "neutral" for item in evaluable),
         claims_total=len(results),
-        claims_evaluable=len(results),
-        claims_unevaluable=0,
-        claims_checked=sum(item.pairs_evaluated > 0 for item in results),
+        claims_evaluable=len(evaluable),
+        claims_unevaluable=len(results) - len(evaluable),
+        claims_checked=sum(item.pairs_evaluated > 0 for item in evaluable),
         claims_complete=claims_complete,
-        claims_incomplete=len(results) - claims_complete,
-        supported=sum(item.status == "supported" for item in results),
-        contradicted=sum(item.status == "contradicted" for item in results),
-        neutral=sum(item.status == "neutral" for item in results),
-        unevaluable=0,
+        claims_incomplete=len(evaluable) - claims_complete,
+        supported=sum(item.status == "supported" for item in evaluable),
+        contradicted=sum(
+            item.status == "contradicted" for item in evaluable
+        ),
+        neutral=sum(item.status == "neutral" for item in evaluable),
+        unevaluable=len(results) - len(evaluable),
         verification_error=sum(
-            item.diagnostic_status == "verification_error" for item in results
+            item.diagnostic_status == "verification_error" for item in evaluable
         ),
         evidence_passed=evidence_total,
         evidence_total=evidence_total,

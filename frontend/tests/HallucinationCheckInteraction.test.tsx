@@ -3,9 +3,15 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import HallucinationCheckPanel from "../components/HallucinationCheckPanel";
+import HallucinationCheckPanel, {
+  HallucinationResultView,
+} from "../components/HallucinationCheckPanel";
 import { useWorkspace } from "../components/WorkspaceProvider";
-import { ApiError, checkHallucinations } from "../lib/api";
+import {
+  ApiError,
+  checkHallucinations,
+  getHallucinationResult,
+} from "../lib/api";
 import type {
   HallucinationCheckResponse,
   RagQueryResponse,
@@ -18,6 +24,7 @@ vi.mock("../lib/api", async (importOriginal) => {
   return {
     ...actual,
     checkHallucinations: vi.fn(),
+    getHallucinationResult: vi.fn(),
   };
 });
 
@@ -68,7 +75,6 @@ const detectionResult: HallucinationCheckResponse = {
     claims_total: 1,
     supported: 0,
     potentially_hallucinated: 1,
-    needs_review: 0,
     nli_disagreements: 1,
     evidence_total: 1,
     pairs_evaluated: 1,
@@ -105,10 +111,12 @@ function workspaceState(
 }
 
 const mockedCheck = vi.mocked(checkHallucinations);
+const mockedGetResult = vi.mocked(getHallucinationResult);
 const mockedWorkspace = vi.mocked(useWorkspace);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedGetResult.mockRejectedValue(new ApiError("not found", 404));
   mockedWorkspace.mockReturnValue(workspaceState(latestRagResult));
 });
 
@@ -117,6 +125,19 @@ afterEach(() => {
 });
 
 describe("HallucinationCheckPanel interaction", () => {
+  test("restores the saved result without running another check", async () => {
+    mockedGetResult.mockResolvedValue(detectionResult);
+
+    render(<HallucinationCheckPanel />);
+
+    expect(await screen.findByText("Groundedness summary")).toBeTruthy();
+    expect(mockedGetResult).toHaveBeenCalledWith(
+      "result-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(mockedCheck).not.toHaveBeenCalled();
+  });
+
   test("renders only the compact summary and original answer", () => {
     render(<HallucinationCheckPanel />);
 
@@ -189,6 +210,35 @@ describe("HallucinationCheckPanel interaction", () => {
         name: "Check for Hallucinations",
       }) as HTMLButtonElement).disabled,
     ).toBe(false);
+  });
+
+  test("keeps evidence references available through Inspect", () => {
+    render(
+      <HallucinationResultView
+        answer="Acme was founded in 2015."
+        check={detectionResult}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Inspect" }));
+
+    expect(
+      screen.getByText(
+        "The dedicated detector and independent NLI result disagree.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("support 12.0%")).toBeTruthy();
+    expect(
+      screen.getByText("iso-27001.txt", { selector: ".result-file" }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    expect(
+      screen.queryByText(
+        "The dedicated detector and independent NLI result disagree.",
+      ),
+    ).toBeNull();
   });
 
   test("shows an actionable error and re-enables the button", async () => {

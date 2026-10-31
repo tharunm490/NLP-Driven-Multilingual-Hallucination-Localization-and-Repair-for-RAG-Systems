@@ -10,10 +10,13 @@ with overlap, generate **multilingual embeddings**, store chunks in a persistent
 generative LLM grounded in the retrieved evidence**, and **extract claims and
 verify them against that evidence** — all through a Next.js UI.
 
-> Phase 4A provides pretrained inference only: language detection, claim
-> extraction, multilingual NER, claim/evidence matching, and multilingual NLI.
-> Fine-tuning, the TF-IDF baseline comparison, span localization, repair, and
-> re-verification are **not** implemented yet.
+> Phase 4A provides pretrained inference with deterministic local claim
+> extraction (English and Hindi rules), language detection, multilingual NER,
+> claim/evidence matching, and multilingual NLI. Claim extraction never calls
+> an LLM or downloads a claim-extraction model.
+> Fine-tuning, the TF-IDF baseline comparison, and span localization are not
+> implemented yet. Hallucination Repair supports three evidence-grounded
+> attempts with independent claim re-verification.
 >
 > The RAG pipeline and verification reduce unsupported answers but do **not**
 > guarantee correctness. NLI confidence is a model score, not calibrated factual
@@ -40,7 +43,9 @@ FastAPI  /api/health  /api/documents/*  /api/retrieval/search
         │                 document_registry, language_detection, token_counter,
         │                 query_language_detection, query_processor,
         │                 prompt_builder, generator, rag_service,
-        │                 verification/ (text, claims, ner, matching, nli, onnx, engine)
+        │                 verification/ (text, claims, claim_common,
+        │                 claim_location, hindi_claims,
+        │                 ner, matching, nli, onnx, engine)
         └── vectorstore/  chroma_store (explicit embeddings, cosine space)
 ```
 
@@ -241,7 +246,7 @@ root `.env.example`). Highlights:
 | `LLM_TIMEOUT_SECONDS` | `60` | Per-request provider timeout |
 | `LLM_MAX_OUTPUT_TOKENS` | `800` | Answer length cap |
 | `VERIFICATION_ENABLED` | `true` | Enable on-demand claim-level verification for stored Ask results |
-| `VERIFICATION_MAX_EXTRACTED_CLAIMS` | `64` | Extracted claims retained for reporting; must be ≥ verified claims |
+| `VERIFICATION_MAX_EXTRACTED_CLAIMS` | `30` | Deterministic extraction is hard-capped at 30 claims |
 | `VERIFICATION_MAX_CLAIMS` | `20` | Maximum claims verified per answer; skipped claims are reported with `verification_error` and a `not_checked` reason |
 | `VERIFICATION_MAX_EVIDENCE_PER_CLAIM` | `50` | Distinct evidence chunks considered per claim; default matches the largest retrievable `top_k` |
 | `VERIFICATION_MAX_NLI_PAIRS` | `250` | Hard ceiling for exhaustive claim/evidence NLI pairs; skipped pairs are reported missing |
@@ -428,7 +433,7 @@ Operational notes:
 
 - Hosted mode loads the NLI tokenizer locally for window sizing but never
   downloads or instantiates the local NLI model.
-- Only the generated claims and selected evidence windows are sent to the
+- Only the extracted claims and selected evidence windows are sent to the
   endpoint; retrieval documents and the full answer are not. The endpoint
   provider's logging, retention, availability, rate limits, and pricing are
   governed by your Hugging Face account/plan and endpoint configuration.
@@ -574,19 +579,21 @@ $env:RUN_HOSTED_NLI_INTEGRATION="1"
 .\.venv\Scripts\python.exe -m pytest tests/integration/test_verification_hosted_endpoint.py -m integration -s
 ```
 
-Latest local results: **backend 271 passed, 11 skipped** (real-model and hosted-
+Latest local results: **backend 329 passed, 12 skipped** (real-model and hosted-
 endpoint tests are opt-in); **frontend 27 passed** with typecheck clean. Phase 4A
-tests cover text offsets/Unicode tokenization, claim extraction and deduplication,
-label/body list reconstruction, nested/pronoun context, NLI label
-mapping/windowing, ONNX label mapping/token-type inputs, hosted
-payload/retry/response validation, exhaustive 2x4 and 15x5 claim/evidence
-coverage, pair-budget and deadline behavior, original retrieval-score
-pass-through, ISO C2/C4/C6/C12 real-model regression, claim prioritization and
-verification-error reporting, bounded request-queue behavior,
-exhaustive/context/conflicting evidence, NER aggregation, engine status
-mapping, RAG verification isolation, frontend request cancellation, per-pair UI
-rendering, and the standalone endpoint. The real-model verification tests
-remain opt-in; a live hosted endpoint is not part of the default suite.
+tests cover text offsets/Unicode tokenization, deterministic English and Hindi
+claim extraction, nested-list grouping, meta-commentary exclusion, exact offset
+location, the 30-claim hard cap, containment-based claim deduplication, NLI
+label mapping/windowing, ONNX
+label mapping/token-type inputs, hosted payload/retry/response validation,
+exhaustive 2x4 and 15x5 claim/evidence coverage, pair-budget and deadline
+behavior, original retrieval-score pass-through, ISO C2/C4/C6/C12 real-model
+regression, claim prioritization and verification-error reporting, bounded
+request-queue behavior, exhaustive/context/conflicting evidence, NER
+aggregation, engine status mapping, RAG verification isolation, frontend
+request cancellation, per-pair UI rendering, and the standalone endpoint. The
+real-model verification tests remain opt-in; a live hosted endpoint is not part
+of the default suite.
 
 Verification performance benchmark (loads the real local NLI model; pass
 `--include-int8` only when the quantized export exists):
@@ -741,7 +748,8 @@ intentionally out of scope and planned for later phases:
 - **Phase 4B/training:** TF-IDF + Logistic Regression baseline, fine-tuning,
   comparison against the pretrained NLI model, and dataset/label preparation.
 - **Phase 5:** hallucination classification and word/span localization.
-- **Phase 6:** targeted LLM repair and re-verification.
+- **Phase 6:** targeted LLM repair and re-verification (implemented with a
+  fixed three-iteration claim queue).
 - **Phase 7:** richer chat/span-highlighting UI integration.
 - **Phase 8:** reproducible training/evaluation across RAGTruth, PsiloQA,
   Mu-SHROOM, BHRAM-IL, with per-language metrics and calibration.
@@ -820,7 +828,7 @@ configurable.
   was treated as "sufficient"; the LLM was then instructed to state the limitation.
   Tune the threshold (or disable the filter) per model/corpus.
 - Verification is pretrained inference only. It does not include fine-tuning, a
-  TF-IDF/Logistic Regression baseline, span localization, or repair.
+  TF-IDF/Logistic Regression baseline, or span localization.
 - NLI confidence is a model score, not a calibrated probability that a claim is
   true. `supported` means the evidence passed the configured entailment
   threshold, not that the claim is objectively correct.
@@ -830,15 +838,24 @@ configurable.
   contain both thresholded support and contradiction, contradiction takes
   precedence for safety, `conflict=true` is retained, and the answer-level status
   is `contradicted`.
-- Claim extraction is local and deterministic. It keeps headings as context while
-  excluding them from claim text, extracts markdown/numbered/bullet/nested list
-  items, separates short list labels from complete proposition bodies (for
-  example `Risk treatment – The organization...`), reconstructs imperative and
-  noun-led items from a lead-in, heading, or parent item, and resolves immediate
-  pronoun references when the referent is unambiguous. Original claim text,
-  reconstructed NLI hypothesis, and reconstruction context are all returned.
-  Metadata, questions, and introductory text are excluded. It can still miss or
-  merge claims in long or ambiguous sentences.
+- Claim extraction is local, deterministic, and language-aware; it never calls
+  an LLM or downloads a claim-extraction model. English text uses sentence and
+  clause rules, while predominantly Devanagari text uses conservative Hindi
+  predicate rules. Headings, metadata, questions, introductory lead-ins, and
+  meta-commentary about missing evidence are skipped. Dependent items under an
+  introductory lead-in are grouped into one source-span claim, while complete
+  bullets remain independent.
+- Every accepted claim keeps original character offsets. Unicode normalization,
+  typographic quotes, markdown, citations, and whitespace differences are
+  handled without semantic or fuzzy matching. Extraction is hard-capped at 30
+  claims, deduplicated by normalized containment, and ordered by source
+  position.
+- The English rules handle headings, markdown prefixes, citations, list items,
+  label/body pairs, and clearly independent clauses. Questions, malformed
+  fragments, and duplicates are skipped with reasons.
+- Predominantly Devanagari answers use conservative Hindi rules that accept only
+  complete predicates, split coordinated clauses only when both sides are
+  complete, and preserve the original Devanagari text.
 - At most `VERIFICATION_MAX_CLAIMS` claims are verified. Additional extracted
   claims retain `verification_error` with a `not_checked` reason, not verified
   status. Every checked claim is compared with up to
@@ -855,7 +872,8 @@ configurable.
   exercised; broader language claims require evaluation rather than assumption.
 - The LLM answer is still grounded by prompt design as well as verification.
   Verification reduces but cannot eliminate unsupported answers; localization and
-  repair are later phases.
+  repair is available through the Hallucination Repair page and is limited to
+  three evidence-grounded iterations.
 
 ---
 

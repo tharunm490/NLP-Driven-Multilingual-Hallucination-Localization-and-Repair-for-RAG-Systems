@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 HallucinationVerdict = Literal[
     "supported",
     "potentially_hallucinated",
-    "needs_review",
 ]
 
 
@@ -55,7 +54,6 @@ class HallucinationSummary(BaseModel):
     claims_total: int = 0
     supported: int = 0
     potentially_hallucinated: int = 0
-    needs_review: int = 0
     nli_disagreements: int = 0
     evidence_total: int = 0
     pairs_evaluated: int = 0

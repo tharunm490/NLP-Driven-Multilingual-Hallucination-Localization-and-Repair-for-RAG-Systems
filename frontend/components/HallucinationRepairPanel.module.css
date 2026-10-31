@@ -1,0 +1,182 @@
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.attemptField {
+  width: 132px;
+  flex: 0 0 auto;
+}
+
+.controlsSpacer {
+  flex: 1 1 auto;
+}
+
+.attemptList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attempt {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.attemptHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.attemptTitle {
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.attemptMeta {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.attempt p {
+  margin: 5px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.attemptLabel {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.quoteList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 10px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.quote cite {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.omissionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.omission {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  background: var(--bg);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.omission strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  font-size: 0.8rem;
+}
+
+.legendItem {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.resultMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.claimCell {
+  max-width: 390px;
+}
+
+.claimCell span {
+  display: block;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.subtle {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
+.finalAnswerText {
+  white-space: pre-wrap;
+}
+
+.insufficientEvidenceMark {
+  background: var(--warning-soft);
+  border-bottom: 2px solid var(--warning);
+  word-break: break-word;
+  font-size: 0.92rem;
+  line-height: 1.9;
+}
+
+.inspectorMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 8px;
+}
+
+.emptyBlock {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
