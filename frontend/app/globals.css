@@ -1504,3 +1504,109 @@ textarea {
     margin-left: 0;
   }
 }
+
+/* ── Compare / Eval layout ─────────────────────────────────────── */
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+@media (max-width: 768px) {
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Eval metric bars ───────────────────────────────────────────── */
+.eval-metric {
+  margin-bottom: var(--space-5);
+}
+
+.eval-metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-2);
+}
+
+.eval-metric-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.eval-metric-hint {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.eval-metric-delta {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.eval-delta-positive {
+  color: var(--tone-success);
+}
+
+.eval-delta-negative {
+  color: var(--tone-warning);
+}
+
+.eval-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.eval-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.eval-bar-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: 2.5rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.eval-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.eval-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.eval-bar-rag-better {
+  background: var(--tone-success);
+}
+
+.eval-bar-rag-worse {
+  background: var(--tone-warning);
+}
+
+.eval-bar-llm {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.eval-bar-value {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  width: 4rem;
+  text-align: right;
+  flex-shrink: 0;
+}

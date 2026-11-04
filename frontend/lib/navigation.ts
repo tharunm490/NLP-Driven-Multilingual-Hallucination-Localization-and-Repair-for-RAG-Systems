@@ -1,5 +1,6 @@
 import {
   FileText,
+  FlaskConical,
   LayoutDashboard,
   MessageSquare,
   Search,
@@ -25,8 +26,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/documents",
     label: "Documents",
-    description:
-      "Upload, process, and manage the documents used as evidence by your RAG system.",
+    description: "Upload, process, and manage the documents used as evidence by your RAG system.",
     icon: FileText,
   },
   {
@@ -38,9 +38,14 @@ export const NAV_ITEMS: NavItem[] = [
   {
     href: "/ask",
     label: "Ask Documents",
-    description:
-      "Ask questions about your uploaded documents and inspect the evidence used to answer them.",
+    description: "Ask questions about your uploaded documents and inspect the evidence used to answer them.",
     icon: MessageSquare,
+  },
+  {
+    href: "/evaluate",
+    label: "Pipeline Evaluation",
+    description: "Score RAG vs LLM-only answers against retrieved evidence to measure pipeline improvement.",
+    icon: FlaskConical,
   },
   {
     href: "/verification",

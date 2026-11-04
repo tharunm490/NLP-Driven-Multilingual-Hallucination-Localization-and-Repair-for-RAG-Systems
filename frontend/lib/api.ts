@@ -1,7 +1,10 @@
 import type {
+  CompareQueryResponse,
   DeleteDocumentResponse,
   DocumentInfo,
   DocumentListResponse,
+  EvalRequest,
+  EvalResponse,
   HealthResponse,
   RagQueryRequest,
   RagQueryResponse,
@@ -145,6 +148,22 @@ export function search(payload: SearchRequest): Promise<SearchResponse> {
 export function askQuestion(payload: RagQueryRequest): Promise<RagQueryResponse> {
   return request<RagQueryResponse>(
     "/api/rag/query",
+    jsonInit("POST", payload),
+    RAG_TIMEOUT_MS,
+  );
+}
+
+export function compareQuestion(payload: RagQueryRequest): Promise<CompareQueryResponse> {
+  return request<CompareQueryResponse>(
+    "/api/rag/compare",
+    jsonInit("POST", payload),
+    RAG_TIMEOUT_MS,
+  );
+}
+
+export function evaluateAnswer(payload: EvalRequest): Promise<EvalResponse> {
+  return request<EvalResponse>(
+    "/api/rag/evaluate",
     jsonInit("POST", payload),
     RAG_TIMEOUT_MS,
   );

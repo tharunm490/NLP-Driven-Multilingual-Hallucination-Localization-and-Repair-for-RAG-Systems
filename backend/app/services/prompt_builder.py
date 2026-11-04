@@ -113,6 +113,22 @@ class PromptBuilder:
             )
         return "\n\n".join(blocks)
 
+    def build_bare_llm(self, question: str) -> BuiltPrompt:
+        """Prompt for the baseline LLM-only call — no retrieved evidence provided."""
+        user_message = (
+            f"USER QUESTION:\n{question}\n\n"
+            "TASK:\n"
+            "Answer the question using your general knowledge. "
+            "Be concise and factual. If you are not confident, say so."
+        )
+        return BuiltPrompt(
+            system_prompt="You are a helpful assistant. Answer questions concisely and factually using your general knowledge.",
+            user_message=user_message,
+            evidence_text="",
+            source_count=0,
+            prompt_version="llm-only-baseline-1.0.0",
+        )
+
     def build_insufficient_evidence(self, question: str) -> BuiltPrompt:
         """Prompt used only when the policy allows generation without evidence."""
         user_message = (

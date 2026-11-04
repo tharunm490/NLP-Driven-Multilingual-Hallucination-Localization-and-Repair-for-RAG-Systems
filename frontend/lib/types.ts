@@ -157,3 +157,38 @@ export interface RagQueryResponse {
   generation: RagGenerationInfo;
   timings: RagTimings;
 }
+
+export interface CompareQueryResponse {
+  question: string;
+  detected_language: string | null;
+  language_reliable: boolean;
+  rag: RagQueryResponse;
+  llm_only_answer: string;
+  llm_only_generation: RagGenerationInfo;
+  llm_only_generation_ms: number;
+}
+
+export interface AnswerMetrics {
+  rouge_l: number;
+  semantic_similarity: number;
+}
+
+export interface EvalRequest {
+  question: string;
+  top_k?: number;
+  document_ids?: string[];
+}
+
+export interface EvalResponse {
+  question: string;
+  evidence_used_as_reference: string;
+  rag_answer: string;
+  rag_answer_mode: AnswerMode;
+  llm_only_answer: string;
+  rag_metrics: AnswerMetrics;
+  llm_only_metrics: AnswerMetrics;
+  rag_sources_count: number;
+  rag_retrieval_ms: number;
+  rag_generation_ms: number;
+  llm_only_generation_ms: number;
+}

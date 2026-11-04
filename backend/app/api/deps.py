@@ -16,6 +16,7 @@ from app.schemas.health import ComponentStatus
 from app.services.document_processor import DocumentProcessor
 from app.services.document_registry import DocumentRegistry
 from app.services.embedding_service import EmbeddingService
+from app.services.evaluation_service import EvaluationService
 from app.services.generator import Generator, build_generator
 from app.services.ingestion_service import IngestionService
 from app.services.language_detection import LanguageDetector
@@ -116,6 +117,11 @@ def get_generator() -> Generator:
 
 
 @lru_cache(maxsize=1)
+def get_evaluation_service() -> EvaluationService:
+    return EvaluationService(get_embedding_service())
+
+
+@lru_cache(maxsize=1)
 def get_rag_service() -> RagService:
     return RagService(
         settings=get_settings(),
@@ -123,6 +129,7 @@ def get_rag_service() -> RagService:
         generator=get_generator(),
         language_detector=get_query_language_detector(),
         prompt_builder=get_prompt_builder(),
+        evaluation_service=get_evaluation_service(),
     )
 
 

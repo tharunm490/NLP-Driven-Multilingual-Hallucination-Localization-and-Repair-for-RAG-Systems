@@ -94,3 +94,51 @@ class RagQueryResponse(BaseModel):
     retrieval: RagRetrievalInfo
     generation: RagGenerationInfo
     timings: RagTimings
+
+
+class CompareQueryResponse(BaseModel):
+    question: str
+    detected_language: str | None = None
+    language_reliable: bool = False
+    rag: RagQueryResponse
+    llm_only_answer: str
+    llm_only_generation: RagGenerationInfo
+    llm_only_generation_ms: float
+
+
+class AnswerMetrics(BaseModel):
+    rouge_l: float = Field(description="ROUGE-L F1 score against the reference answer.")
+    semantic_similarity: float = Field(description="Cosine similarity of answer embedding vs reference embedding.")
+
+
+class EvalRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=8000)
+    top_k: int | None = Field(default=None, ge=1, le=50)
+    document_ids: list[str] | None = None
+
+    @field_validator("question")
+    @classmethod
+    def must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must not be blank")
+        return v
+
+
+class EvalResponse(BaseModel):
+    question: str
+    evidence_used_as_reference: str = Field(
+        description="Concatenated retrieved chunks used as the reference for scoring."
+    )
+    rag_answer: str
+    rag_answer_mode: AnswerMode
+    llm_only_answer: str
+    rag_metrics: AnswerMetrics = Field(
+        description="RAG answer scored against the retrieved evidence."
+    )
+    llm_only_metrics: AnswerMetrics = Field(
+        description="LLM-only answer scored against the same retrieved evidence."
+    )
+    rag_sources_count: int
+    rag_retrieval_ms: float
+    rag_generation_ms: float
+    llm_only_generation_ms: float
